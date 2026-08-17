@@ -115,6 +115,26 @@ pre.payload{background:#0f1720;color:#d7e3ee;border-radius:9px;padding:11px;font
  letter-spacing:.5px;margin:0 0 10px}
 .vitem label{font-size:12px}
 .vsplit{display:grid;grid-template-columns:1fr 96px;gap:10px;align-items:end}
+#sent{position:fixed;inset:0;z-index:60;background:#fff;overflow-y:auto;text-align:center;
+ padding:calc(6vh + env(safe-area-inset-top)) 20px calc(30px + env(safe-area-inset-bottom))}
+#sent .sbox{max-width:420px;margin:0 auto}
+#sent .stick{width:96px;height:96px;margin:0 auto 22px;border-radius:50%;background:#ecfdf3;
+ border:2px solid #a6f4c5;color:var(--ok);font-size:52px;line-height:92px;font-weight:700}
+#sent.queued .stick{background:#fffaf1;border-color:#f0d5a8;color:var(--gold);font-size:44px}
+#sent h1{margin:0 0 6px;font-size:27px;font-weight:700;color:var(--blue);letter-spacing:-.4px}
+#sent .sthanks{margin:0 0 26px;font-size:16px;color:var(--mid)}
+#sent .scard{background:#f7fafc;border:1px solid var(--line);border-radius:12px;
+ padding:16px 18px;text-align:left;margin-bottom:16px}
+#sent .scard table{width:100%;border-collapse:collapse;font-size:14.5px}
+#sent .scard td{padding:4px 0}
+#sent .scard td:last-child{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+#sent .scard tr.hdr td{font-size:11.5px;font-weight:700;text-transform:uppercase;
+ letter-spacing:.6px;color:var(--mid);padding-top:12px}
+#sent .scard tr.big td{font-size:17px;font-weight:750;color:var(--blue);padding-top:9px;
+ border-top:1px solid var(--line)}
+#sent .sbtn{width:100%;background:#fff;color:var(--blue);border:1.5px solid var(--blue);
+ border-radius:10px;padding:14px;font:inherit;font-size:16px;font-weight:650;cursor:pointer}
+#sent .sfoot{margin-top:26px;font-size:11.5px;color:var(--mid)}
 .warn{background:#fffaf1;border:1px solid #f0d5a8;color:var(--gold);border-radius:9px;padding:10px 12px;
  font-size:12.5px;margin-bottom:12px;line-height:1.45}
 </style>
@@ -133,6 +153,17 @@ pre.payload{background:#0f1720;color:#d7e3ee;border-radius:9px;padding:11px;font
   <p style="font-size:11.5px;color:#5b6b7a;margin-top:18px">
     Rates are encrypted. Without the password they are not in this file in any readable form.
   </p>
+</div>
+
+<div id="sent" hidden>
+  <div class="sbox">
+    <div class="stick" id="sTick">&#10003;</div>
+    <h1 id="sTitle">Price work sent</h1>
+    <p class="sthanks" id="sThanks">Thank you.</p>
+    <div class="scard" id="sCard"></div>
+    <button class="sbtn" id="sAgain" type="button">Fill in another sheet</button>
+    <p class="sfoot">West End Joiners and Builders Ltd</p>
+  </div>
 </div>
 
 <div id="app" hidden>
@@ -190,7 +221,7 @@ pre.payload{background:#0f1720;color:#d7e3ee;border-radius:9px;padding:11px;font
 
     <p class="foot">
       901 Furness / Oaklands &middot; rates rev 10.07.26 revA<br>
-      Price sheet <strong>v1.5</strong> &middot; goes to <span id="fTo"></span><br>
+      Price sheet <strong>v1.6</strong> &middot; goes to <span id="fTo"></span><br>
       These rates are for this site only. Do not pass this sheet or the password to anyone off this job.
     </p>
   </main>
@@ -537,6 +568,48 @@ function validate(d){
 
 const fullBody = d => humanSummary(d) + "\n" + buildPayload(d) + "\n";
 
+function showSent(d, queued){
+  let total = 0, items = 0;
+  const rows = [["Name", d.name],
+                ["Week ending", d.we.split("-").reverse().join("/")],
+                ["Site", SITE + " " + RATES.name]];
+  rows.push(["HDR", "What you claimed"]);
+  d.plots.forEach(p => {
+    const sub = p.lines.reduce((a,l)=>a + l.qty*l.rate, 0);
+    total += sub; items += p.lines.length;
+    if(p.lines.length)
+      rows.push(["Plot " + (p.plot||"").replace(/^plot\s*/i,""), money(sub)]);
+  });
+  const vh = d.vars.reduce((a,v)=>a+(v.hours||0),0);
+  if(d.vars.length) rows.push(["Variations", d.vars.length
+      + (d.vars.length===1?" job, ":" jobs, ") + (+vh.toFixed(2)) + " hr"]);
+  rows.push(["BIG", "Price work total", money(total)]);
+
+  $("sCard").innerHTML = "<table>" + rows.map(r=>{
+    if(r[0]==="HDR") return '<tr class="hdr"><td colspan="2">' + r[1] + "</td></tr>";
+    if(r[0]==="BIG") return '<tr class="big"><td>' + r[1] + "</td><td>" + r[2] + "</td></tr>";
+    return "<tr><td>" + r[0] + "</td><td>" + r[1] + "</td></tr>";
+  }).join("") + "</table>";
+
+  const sent = $("sent");
+  if(queued){
+    sent.classList.add("queued");
+    $("sTick").innerHTML = "&#8987;";
+    $("sTitle").textContent = "Saved on your phone";
+    $("sThanks").innerHTML = "No signal just now. It will send itself as soon as you get a bar "
+      + "&mdash; you can close this page.";
+  } else {
+    sent.classList.remove("queued");
+    $("sTick").innerHTML = "&#10003;";
+    $("sTitle").textContent = "Price work sent";
+    $("sThanks").textContent = "Thank you. The office will check it against the plot.";
+  }
+  sent.hidden = false;
+  $("app").hidden = true;
+  document.body.style.overflow = "hidden";
+  window.scrollTo(0,0);
+}
+
 function mailtoFallback(body, subj){
   window.location.href = "mailto:" + encodeURIComponent(SEND_TO)
     + (SEND_CC ? "&cc=" + encodeURIComponent(SEND_CC) : "")
@@ -570,14 +643,15 @@ async function doSend(viaEmail){
   btn.disabled = true; btn.textContent = "Sending\u2026";
   try{
     await postOne(item);
-    done.innerHTML = "<strong>Sent.</strong> The office will check it against the plot.";
-    done.classList.add("on");
+    showSent(d, false);
   }catch(e){
     const saved = queueAdd(item);
-    done.innerHTML = saved
-      ? "<strong>No signal — saved on your phone.</strong> It will send itself once you have a bar."
-      : "<strong>Couldn't send and couldn't save it.</strong> Tap <strong>Email instead</strong>.";
-    done.classList.add("on");
+    if(saved){ showSent(d, true); }
+    else{
+      done.innerHTML = "<strong>Couldn't send and couldn't save it.</strong> "
+        + "Tap <strong>Email instead</strong>.";
+      done.classList.add("on");
+    }
     showQueue();
   }finally{
     btn.disabled = false; btn.textContent = "Send price work";
@@ -586,6 +660,7 @@ async function doSend(viaEmail){
 
 $("sendBtn").addEventListener("click", ()=> doSend(false));
 $("copyBtn").addEventListener("click", ()=> doSend(true));
+$("sAgain").addEventListener("click", ()=> location.reload());
 
 function start(){
   document.title = "901 Furness / Oaklands price work";
