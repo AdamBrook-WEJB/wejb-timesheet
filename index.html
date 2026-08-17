@@ -178,6 +178,7 @@ body.fixedmode .stdbtn:not(.asabove){display:none}
 
 /* repeat blocks (price work, expenses) */
 .item{border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:10px;background:#fbfdff;position:relative}
+.item.ismiles{background:#f5fbff;border-color:#a7d3f0}
 .item .rm{position:absolute;top:8px;right:8px;border:none;background:none;color:var(--danger);font-size:18px;cursor:pointer;padding:2px 6px;font-weight:600}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .hint{font-size:12.5px;color:var(--mid);margin:-4px 0 12px;line-height:1.4}
@@ -398,7 +399,7 @@ pre.payload{
   <!-- 5. EXPENSES -->
   <section class="card fold" data-fold="5">
     <h2><span class="n">5</span> Expenses &amp; materials</h2>
-    <p class="hint">Parking, fuel, anything you've bought for a job. Keep your receipt — photograph it and reply to the email if you can.</p>
+    <p class="hint">Parking, fuel, anything you've bought for a job. Pick <strong>Mileage</strong> and the box asks for miles instead of money — the office puts the rate to it. Keep your receipt — photograph it and reply to the email if you can.</p>
     <div id="ex"></div>
     <div class="empty" id="exEmpty">Nothing added</div>
     <button class="addrow" id="addEx" type="button">+ Add expense</button>
@@ -455,20 +456,21 @@ pre.payload{
         <tr class="big"><td>Total paid hours</td><td id="sTotal">0</td></tr>
         <tr class="var"><td>of which variation work</td><td id="sVar">0</td></tr>
         <tr><td>Expenses</td><td id="sEx">£0.00</td></tr>
+        <tr><td>Mileage</td><td id="sMiles">0</td></tr>
         <tr><td>Photos attached</td><td id="sShots">0</td></tr>
         <tr><td>Holiday requested</td><td id="sHolReq">none</td></tr>
       </table>
     </div>
     <div class="field">
-      <label for="notes">Standing time, or anything else the office needs to know</label>
-      <textarea id="notes" rows="4" placeholder="If you were stood waiting, say how long and what for — e.g. stood 2 hr Tuesday waiting on ceilings. It may be chargeable."></textarea>
+      <label for="notes">Any other notes for the office</label>
+      <textarea id="notes" rows="3" placeholder="Anything the office should know — e.g. new lad started with me Monday, van needs booking in, ran out of ironmongery Thursday."></textarea>
     </div>
     <pre class="payload" id="preview" style="display:none"></pre>
   </section>
 
   <p class="foot">
     West End Joiners and Builders Ltd &middot; Farrar Mill, Rookery Lane, Halifax HX3 0PY<br>
-    Timesheet form <strong>v2.7 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
+    Timesheet form <strong>v2.8 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
     Trial version &mdash; if anything looks wrong, tell Adam or Will which day it was.
   </p>
 </main>
@@ -1204,7 +1206,7 @@ $("addEx").addEventListener("click", ()=>{
   const f1 = el("div","field");
   const l1 = el("label"); l1.textContent="What for";
   const s = el("select"); s.className="extype";
-  ["Parking","Fuel / mileage","Materials","Tools / consumables","Congestion / toll","Other"]
+  ["Parking","Fuel","Mileage","Materials","Tools / consumables","Congestion / toll","Other"]
     .forEach(x=>{ const o=el("option"); o.value=x; o.textContent=x; s.appendChild(o); });
   f1.append(l1,s);
   const f2 = el("div","field");
@@ -1212,6 +1214,16 @@ $("addEx").addEventListener("click", ()=>{
   const a = el("input"); a.type="number"; a.min="0"; a.step="0.01"; a.placeholder="0.00";
   a.inputMode="decimal"; a.className="amt";
   f2.append(l2,a);
+  // mileage is claimed in miles; the office puts the rate to it
+  const setMode = ()=>{
+    const miles = s.value === "Mileage";
+    it.classList.toggle("ismiles", miles);
+    l2.textContent = miles ? "Miles" : "Amount £";
+    a.step = miles ? "1" : "0.01";
+    a.placeholder = miles ? "0" : "0.00";
+    a.inputMode = miles ? "numeric" : "decimal";
+  };
+  s.addEventListener("change", setMode);
   two.append(f1,f2);
 
   const f3 = el("div","field");
@@ -1228,6 +1240,7 @@ $("addEx").addEventListener("click", ()=>{
   it.addEventListener("input", recalc);
   it.addEventListener("change", recalc);
   host.appendChild(it);
+  setMode();
   recalc();
 });
 
@@ -1351,20 +1364,22 @@ function collect(){
     days.push({ iso, hol, entries, calc: computeDay(iso, entries, hol) });
   });
   const pw = [];   // price work now goes in on the site's own sheet
-  const ex = [];
+  const ex = [], miles = [];
   document.querySelectorAll("#ex .item").forEach(i=>{
     const type= i.querySelector(".extype").value;
-    const amt = num(i.querySelector(".amt").value);
+    const v   = num(i.querySelector(".amt").value);
     const job = i.querySelector("select:not(.extype)").value;
     const dsc = i.querySelector(".edesc").value.trim();
-    if(amt > 0) ex.push({type, amt, job, dsc});
+    if(!(v > 0)) return;
+    if(type === "Mileage") miles.push({ miles:v, job, dsc });
+    else ex.push({ type, amt:v, job, dsc });
   });
   const hol = {
     from: $("hFrom").value, to: $("hTo").value,
     days: num($("hDays").value), note: $("hNote").value.trim()
   };
   hol.any = !!(hol.from || hol.to || hol.days > 0 || hol.note);
-  return {name, type:personType(), we:$("we").value, days, pw, ex, hol,
+  return {name, type:personType(), we:$("we").value, days, pw, ex, miles, hol,
           notes:$("notes").value.trim()};
 }
 
@@ -1419,6 +1434,8 @@ function recalc(){
   $("sTotal").textContent  = paid ? +paid.toFixed(2) : "0";
   $("sVar").textContent    = b.VAR ? +b.VAR.toFixed(2) : "0";
   $("sEx").textContent     = "£" + fmt(d.ex.reduce((a,x)=>a+x.amt,0));
+  const totMiles = d.miles.reduce((a,x)=>a+x.miles,0);
+  $("sMiles").textContent  = totMiles ? (+totMiles.toFixed(0)) + " miles" : "0";
   $("sShots").textContent  = allShots().length;
 
   // each entry shows what its times come to, before the break
@@ -1473,8 +1490,13 @@ function recalc(){
   const nv = VARS.filter(v=>v.job && v.hours>0).length;
   const vh = VARS.reduce((a,v)=>a + (v.job && v.hours>0 ? v.hours : 0), 0);
   setBadge("4", nv ? nv + (nv===1?" variation, ":" variations, ") + (+vh.toFixed(2)) + " hr" : "none", !!nv);
-  const nx = d.ex.length, xv = d.ex.reduce((a,x)=>a+x.amt,0);
-  setBadge("5", nx ? nx + " item" + (nx===1?"":"s") + ", £" + fmt(xv) : "none", !!nx);
+  const nx = d.ex.length + d.miles.length;
+  const xv = d.ex.reduce((a,x)=>a+x.amt,0);
+  const mv = d.miles.reduce((a,x)=>a+x.miles,0);
+  const bits5 = [];
+  if(d.ex.length) bits5.push("£" + fmt(xv));
+  if(mv)          bits5.push((+mv.toFixed(0)) + " miles");
+  setBadge("5", nx ? bits5.join(", ") : "none", !!nx);
   const np = allShots().length;
   setBadge("6", np ? np + " photo" + (np===1?"":"s") : "none", !!np);
   setBadge("7", d.hol.any ? (d.hol.days>0 ? d.hol.days + " day" + (d.hol.days===1?"":"s") + " asked for"
@@ -1957,6 +1979,7 @@ function buildPayload(d){
     L.push(["V", v.job, v.hours, v.ref, (v.desc||"").replace(/\|/g,"/"), v.shots.length].join("|")); });
   d.pw.forEach(x => L.push(["P", x.job, x.plot, x.type, x.qty, x.dsc].join("|")));
   d.ex.forEach(x => L.push(["E", x.type, x.amt.toFixed(2), x.job, x.dsc].join("|")));
+  d.miles.forEach(x => L.push(["M", x.miles, x.job, x.dsc].join("|")));
   if(d.hol.any) L.push(["R", d.hol.from, d.hol.to, d.hol.days,
                         (d.hol.note||"").replace(/\|/g,"/")].join("|"));
   if(d.notes) L.push("N|" + d.notes.replace(/\r?\n/g," / "));
@@ -2040,6 +2063,12 @@ function humanSummary(d){
                              + (x.job ? " — job " + x.job : "") + (x.dsc ? " — " + x.dsc : "")));
     L.push("  Total £" + fmt(d.ex.reduce((a,x)=>a+x.amt,0)));
   }
+  if(d.miles.length){
+    L.push(""); L.push("MILEAGE  (miles only — office to apply the rate)");
+    d.miles.forEach(x => L.push("  " + (+x.miles) + " miles"
+                             + (x.job ? " — job " + x.job : "") + (x.dsc ? " — " + x.dsc : "")));
+    L.push("  Total " + (+d.miles.reduce((a,x)=>a+x.miles,0)) + " miles");
+  }
   if(SHOTS.length){
     L.push(""); L.push("RECEIPTS / JOB CARDS");
     SHOTS.forEach((s,i)=> L.push("  " + (i+1) + ". "
@@ -2077,7 +2106,8 @@ function validate(d){
     if(d.hol.to < d.hol.from)    return "Holiday request: the last day is before the first day.";
     if(!(d.hol.days > 0))        return "Holiday request needs the number of working days you want.";
   }
-  if(!b.ONSITE && !b.HOL && !d.pw.length && !d.ex.length && !VARS.length && !d.hol.any)
+  if(!b.ONSITE && !b.HOL && !d.pw.length && !d.ex.length && !d.miles.length
+     && !VARS.length && !d.hol.any)
     return "Nothing to send yet — add some hours, price work or expenses.";
   for(let i = 0; i < VARS.length; i++){
     const v = VARS[i];
@@ -2181,6 +2211,8 @@ function showSent(d, queued, photos){
   if(nv) rows.push(["Variation work", nv + (nv===1?" job, ":" jobs, ")
                     + (+b.VAR.toFixed(2)) + " hr"]);
   if(d.ex.length) rows.push(["Expenses", "£" + fmt(d.ex.reduce((a,x)=>a+x.amt,0))]);
+  if(d.miles.length) rows.push(["Mileage",
+      (+d.miles.reduce((a,x)=>a+x.miles,0).toFixed(0)) + " miles"]);
   if(d.hol.any) rows.push(["Holiday request", d.hol.days + " day"
                           + (d.hol.days===1?"":"s") + " asked for"]);
   rows.push(["BIG", "Total paid hours", (+(b.BASIC + b["X1.5"] + b.X2 + b.HOL).toFixed(2)) + " hr"]);
