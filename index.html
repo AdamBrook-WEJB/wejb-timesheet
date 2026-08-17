@@ -120,6 +120,12 @@ input[type=checkbox]{appearance:auto;-webkit-appearance:auto;width:auto;padding:
   border-radius:9px;padding:9px;font:inherit;font-size:13px;font-weight:650;cursor:pointer
 }
 .hidelbl .lbl{display:none}
+.fixedrow{display:none;grid-template-columns:auto 84px 1fr 32px;gap:9px;align-items:center}
+body.fixedmode .fixedrow{display:grid}
+body.fixedmode .row{display:none}
+.fixedrow .lbl{margin:0;font-size:12px;font-weight:600;color:var(--mid)}
+.fixedrow input{padding:9px 10px;font-size:15px}
+.fixedrow .fnote{font-size:12px;color:var(--warn);font-weight:650}
 .holwrap{
   display:flex;align-items:center;gap:8px;margin-top:2px;font-size:13px;
   font-weight:600;color:var(--mid);cursor:pointer
@@ -166,6 +172,7 @@ input[type=checkbox]{appearance:auto;-webkit-appearance:auto;width:auto;padding:
   padding:6px 9px;font:inherit;font-size:11.5px;font-weight:650;cursor:pointer;white-space:nowrap
 }
 .stdbtn.asabove{border-color:var(--line);background:#fff;color:var(--mid)}
+body.fixedmode .stdbtn:not(.asabove){display:none}
 .dh .right{display:flex;align-items:center;gap:9px}
 .sum tr.var td{color:var(--warn)}
 
@@ -203,6 +210,19 @@ button.ghost{
 .err.on{display:block}
 .done{background:#ecfdf3;border:1px solid #a6f4c5;color:var(--ok);border-radius:9px;padding:12px;font-size:14px;margin-bottom:12px;display:none}
 .done.on{display:block}
+.fixnote{
+  background:#fffaf1;border:1px solid #f0d5a8;color:var(--warn);border-radius:9px;
+  padding:12px 13px;font-size:13.5px;margin-bottom:12px;line-height:1.5
+}
+.prefill{
+  background:#f2f7ff;border:1px solid #c5dcf5;color:#254a6d;border-radius:9px;
+  padding:12px 13px;font-size:13.5px;margin-bottom:12px;line-height:1.5
+}
+.prefill button{
+  display:block;width:100%;margin-top:11px;background:#fff;color:var(--blue);
+  border:1.5px solid var(--blue);border-radius:9px;padding:10px;font:inherit;
+  font-size:14px;font-weight:650;cursor:pointer
+}
 .qnote{background:#fffaf1;border:1px solid #f0d5a8;color:var(--warn);border-radius:9px;
  padding:11px 12px;font-size:13.5px;margin-bottom:12px;line-height:1.45}
 pre.payload{
@@ -317,6 +337,11 @@ pre.payload{
   <div class="err" id="err"></div>
   <div class="done" id="done"></div>
   <div class="qnote" id="qNote" style="display:none"></div>
+  <div class="fixnote" id="fixedNote" style="display:none"></div>
+  <div class="prefill" id="prefill" style="display:none">
+    <div id="prefillTxt"></div>
+    <button type="button" id="clearWeek">Clear it and start empty</button>
+  </div>
 
   <!-- 1. WHO / WHEN -->
   <section class="card">
@@ -443,7 +468,7 @@ pre.payload{
 
   <p class="foot">
     West End Joiners and Builders Ltd &middot; Farrar Mill, Rookery Lane, Halifax HX3 0PY<br>
-    Timesheet form <strong>v1.9 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
+    Timesheet form <strong>v2.2 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
     Trial version &mdash; if anything looks wrong, tell Adam or Will which day it was.
   </p>
 </main>
@@ -516,9 +541,10 @@ const JOBS = [
 
 // Everyone who submits, taken from the WK19 wages sheet. Add and remove as
 // people start and leave. type "PAYE" = hourly block, "LO" = LABOUR ONLY block.
-// Not included: Oscar Pollard (left), Ben Hellowell (moved to salary).
+// Not included: Oscar Pollard (left).
 const PEOPLE = [
   {n:"Andy Woodhead",      t:"PAYE"},
+  {n:"Ben Hellowell",      t:"PAYE"},
   {n:"Brad Gilbert",       t:"PAYE"},
   {n:"Callum Dunne",       t:"PAYE"},
   {n:"Chris Harte",        t:"PAYE"},
@@ -589,15 +615,14 @@ const PW_ITEMS_UNUSED = [
   "Other — say below"
 ];
 
-/* Travel: paid one way, office to site. Hours per job — PLACEHOLDERS, these need
-   setting properly per site before this goes live. 0 means none allowed. */
+/* Travel: paid one way, office to site. Hours, from the site schedule. */
 const TRAVEL = {
-  "001":0,    "021":0.25, "042":0,    "075":0.5,  "088":0.5,
-  "810":0.75, "835":0.5,  "871":0.5,  "874":0.75, "875":1,
-  "881":1.25, "882":0.25, "892":0.75, "897":0.25, "898":0.25,
-  "899":0.75, "900":0.75, "901":0.75, "902":1,    "904":0.75,
-  "906":0.5,  "907":0.75, "908":1,    "909":0.5,  "910":0.5,
-  "911":0.25, "912":0.5,  "913":0.75, "OTHER":0
+  "001":0,    "021":0,    "042":0,    "075":0,    "088":0,
+  "810":1,    "835":1,    "871":0.5,  "874":1,    "875":1,
+  "881":1,    "882":0,    "892":1,    "897":0,    "898":0,
+  "899":0.75, "900":1,    "901":0,    "902":0,    "904":0.75,
+  "906":0,    "907":0,    "908":1,    "909":0.75, "910":0.75,
+  "911":0,    "912":0.75, "913":0.75, "OTHER":0
 };
 
 /* Overtime, per Adam 16.08.26:
@@ -616,14 +641,48 @@ const OT = {
    08:00-16:30 with 30 minutes unpaid = 8 hours paid. Someone on 07:00-15:30 gets
    the same treatment. The break comes off once a day, not once per job, and only
    when the day is long enough to have earned one. */
-const STANDARD     = { start:"08:00", finish:"16:30" };   // Mon-Thu
-const STANDARD_FRI = { start:"08:00", finish:"15:30" };   // Friday finishes earlier
+/* Two patterns run across the sites. LATE is the 8 o'clock start, EARLY the
+   half seven. Friday finishes an hour before the rest of the week on both. */
+const LATE  = { start:"08:00", finish:"16:30", friFinish:"15:30" };
+const EARLY = { start:"07:30", finish:"16:00", friFinish:"15:00" };
+const STANDARD = LATE;
 const STEP_MINS    = 15;                                  // times snap to quarter hours
 
 /* Standard start and finish per site, if a site differs from the above. Add a
    line and that job's days prefill from it instead. Empty = use the standard.
    e.g.  "874": { start:"07:30", finish:"16:00" },                            */
-const SITE_HOURS = {};
+const SITE_HOURS = {
+  "001":LATE,  "021":LATE,  "042":LATE,  "075":LATE,  "088":LATE,
+  "810":EARLY, "835":EARLY, "871":EARLY, "874":EARLY, "875":EARLY,
+  "881":EARLY, "882":LATE,  "892":EARLY, "897":LATE,  "898":LATE,
+  "899":EARLY, "900":EARLY, "901":EARLY, "902":LATE,  "904":EARLY,
+  "906":LATE,  "907":LATE,  "908":LATE,  "909":EARLY, "910":EARLY,
+  "911":LATE,  "912":EARLY, "913":EARLY, "OTHER":LATE
+};
+
+/* --- USUAL WEEK PER PERSON --------------------------------------------------
+   Type a name that matches one of these and the week fills itself in, ready to
+   be corrected. Key is the name as it appears on the roster.
+     job    the site he is normally on
+     start  / finish   his usual times, or leave out to use the site standard
+     days   which days he normally works, Mon=0 ... Sun=6
+   Anything not listed here just gets a blank sheet, as now.
+
+   e.g.  "CRAIG POTTS":      { job:"874", days:[0,1,2,3,4] },
+         "CHRIS HARTE":      { job:"881", start:"07:00", finish:"15:30", days:[0,1,2,3] },
+*/
+const USUAL_WEEK = {
+  // Agreed fixed day, every hour at basic — the overtime rules do not apply to these.
+  "LEIGH TOMLINSON": { fixedHours:12, days:[0,1,2,3,4] },
+  "DAVE HARGREAVES": { fixedHours:12, days:[0,1,2,3,4] },
+  "BEN HELLOWELL":   { fixedHours:10, days:[0,1,2,3,4] },
+  "JOSEPH HELLOWELL":{ fixedHours:10, days:[0,1,2,3,4] }
+};
+
+/* true  = fill the job AND the hours, so a standard week is one tap to check
+   false = fill only the job, and he still has to put his own hours in
+   Set false if you would rather nobody is ever handed hours they did not work. */
+const PREFILL_TIMES = true;
 
 const BREAK_MINS = 30;
 const BREAK_AFTER_HOURS = 6;   // shorter than this and no break is deducted
@@ -645,6 +704,9 @@ const DAYS = [
   {name:"Saturday",  off:-6},
   {name:"Sunday",    off:-5}
 ];
+
+// set when the typed name is on an agreed fixed day (12 or 10 hours, all basic)
+let FIXED = null;
 
 // receipts and job cards photographed on the phone
 const SHOTS = [];        // {id, w, h, bytes:Uint8Array, thumb, job, desc}
@@ -713,7 +775,108 @@ function personType(){
   return hit ? hit.t : "?";
 }
 
-$("who").addEventListener("input", recalc);
+/* ---- fill the week from a known name --------------------------------------
+   Only ever into a completely untouched sheet, and always announced with a way
+   to undo it. A timesheet is a pay claim; nobody should be handed days they did
+   not work without being told.                                              */
+
+// keys are matched loosely, so "Craig Potts", "CRAIG POTTS" and "craig potts" all work
+let _usualMap = null;
+function setFixedMode(){
+  const hit = matchPerson($("who").value.trim());
+  const u = hit ? usualFor(hit.n) : null;
+  FIXED = (u && u.fixedHours) ? u : null;
+  document.body.classList.toggle("fixedmode", !!FIXED);
+  const n = $("fixedNote");
+  if(n){
+    if(FIXED){
+      n.style.display = "";
+      n.innerHTML = "You are on an agreed <strong>" + FIXED.fixedHours
+        + " hour day at basic rate</strong>, so put your hours down rather than your times. "
+        + "No break is taken off and no overtime is added — that is what was agreed.";
+    } else n.style.display = "none";
+  }
+}
+
+function usualFor(name){
+  if(!name) return null;
+  if(!_usualMap){
+    _usualMap = {};
+    Object.keys(USUAL_WEEK).forEach(k => { _usualMap[norm(k).join(" ")] = USUAL_WEEK[k]; });
+  }
+  return _usualMap[norm(name).join(" ")] || null;
+}
+
+function sheetUntouched(){
+  for(const d of document.querySelectorAll("#days .day")){
+    if(d.querySelector(".holchk").checked) return false;
+    for(const e of d.querySelectorAll(".entry")){
+      if(e.querySelector("select.job").value) return false;
+      if(e.querySelector(".st").value || e.querySelector(".fi").value) return false;
+      if((e.querySelector(".fh")||{value:""}).value) return false;
+    }
+  }
+  return true;
+}
+
+function clearWeek(){
+  document.querySelectorAll("#days .day").forEach(d=>{
+    d.querySelector(".holchk").checked = false;
+    d.classList.remove("isHol");
+    d.querySelectorAll(".entry").forEach((e,i)=>{
+      if(i > 0){ e.remove(); return; }
+      e.querySelector("select.job").value = "";
+      e.querySelector(".st").value = "";
+      e.querySelector(".fi").value = "";
+      e.querySelector(".fh").value = "";
+      e.querySelector(".otherbox").style.display = "none";
+      e.classList.remove("isother");
+      e.querySelector(".othertxt").value = "";
+    });
+    d.querySelectorAll(".entry").forEach(e=> e.style.display = "");
+    d.querySelector(".addrow").style.display = "";
+  });
+  $("prefill").style.display = "none";
+  recalc();
+}
+
+let prefilledFor = "";
+
+function applyUsualWeek(){
+  const hit = matchPerson($("who").value.trim());
+  const who = hit ? hit.n : null;
+  const usual = usualFor(who);
+  if(!usual || !sheetUntouched() || prefilledFor === who) return;
+
+  const days = [...document.querySelectorAll("#days .day")];
+  const want = usual.days || [0,1,2,3,4];
+  want.forEach(n=>{
+    const d = days[n];
+    if(!d) return;
+    const e = d.querySelector(".entry");
+    if(!e) return;
+    e.querySelector("select.job").value = usual.job || "";
+    if(usual.fixedHours){
+      e.querySelector(".fh").value = usual.fixedHours;
+    } else if(PREFILL_TIMES){
+      const std = stdFor(d.dataset.iso, usual.job);
+      e.querySelector(".st").value = usual.start  || std.start;
+      e.querySelector(".fi").value = usual.finish || std.finish;
+    }
+    d.classList.add("open");
+  });
+  prefilledFor = who;
+
+  const jn = (JOBS.find(x=>x.code === usual.job) || {}).name || usual.job || "your usual site";
+  $("prefillTxt").innerHTML = "Filled in with your usual week on <strong>" + jn + "</strong>. "
+    + "<strong>Check every day</strong> and change anything that is not right — "
+    + "days you were off, different times, another site.";
+  $("prefill").style.display = "";
+  recalc();
+}
+
+$("who").addEventListener("input", ()=>{ setFixedMode(); recalc(); applyUsualWeek(); });
+$("clearWeek").addEventListener("click", clearWeek);
 ["hFrom","hTo","hDays","hNote"].forEach(id=>{
   const el0 = $(id);
   if(el0){ el0.addEventListener("input", recalc); el0.addEventListener("change", recalc); }
@@ -752,8 +915,11 @@ function makeRow(showLabels){
   oi.placeholder = "Site or job — e.g. snagging at the old care home, Cleckheaton";
   ob.append(ol, oi);
   js.addEventListener("change", ()=>{
-    // picking the job offers that site's usual hours, but only into empty boxes
-    if(js.value && !st.value && !fi.value){
+    const dayEl = entry.closest(".day");
+    if(dayEl && dayEl.__relabel) dayEl.__relabel(js.value);
+    // picking the job offers that site's usual hours, but only into empty boxes,
+    // and never for someone on an agreed fixed day — they claim hours, not times
+    if(!FIXED && js.value && !st.value && !fi.value){
       const day = entry.closest(".day");
       const h = stdFor(day ? day.dataset.iso : "", js.value);
       st.value = h.start; fi.value = h.finish;
@@ -788,6 +954,16 @@ function makeRow(showLabels){
   x.addEventListener("click", ()=>{ entry.remove(); recalc(); });
   c4.append(l4, x);
 
+  // people on an agreed fixed day put hours in, not clocking times
+  const frow = el("div","fixedrow");
+  const fl = el("span","lbl"); fl.textContent = "Hours";
+  const fh = el("input"); fh.type="number"; fh.step="0.25"; fh.min="0"; fh.max="24";
+  fh.inputMode="decimal"; fh.className="fh"; fh.placeholder="0";
+  const fn = el("span","fnote"); fn.textContent = "all at basic";
+  const fx = el("button","xbtn"); fx.type="button"; fx.textContent = "\u00d7";
+  fx.addEventListener("click", ()=>{ entry.remove(); recalc(); });
+  frow.append(fl, fh, fn, fx);
+
   row.append(c1, c2, c3, c4);
 
   // whatever the phone hands back, land it on a quarter hour
@@ -797,7 +973,7 @@ function makeRow(showLabels){
     recalc();
   }));
 
-  entry.append(jrow, ob, row);
+  entry.append(jrow, ob, row, frow);
 
   entry.addEventListener("input", recalc);
   entry.addEventListener("change", recalc);
@@ -812,9 +988,9 @@ function tmin(v){
 }
 /* Mon-Thu one pattern, Friday another, and a site can override either. */
 function stdFor(iso, job){
-  const base = dowOf(iso) === 5 ? STANDARD_FRI : STANDARD;
-  const site = job && SITE_HOURS[job];
-  return site ? { start: site.start, finish: site.finish } : base;
+  const h = (job && SITE_HOURS[job]) || STANDARD;
+  const fri = dowOf(iso) === 5;
+  return { start: h.start, finish: fri ? (h.friFinish || h.finish) : h.finish };
 }
 
 /* snap a typed time to the nearest quarter hour */
@@ -884,6 +1060,12 @@ function buildDays(){
     hh.addEventListener("input", recalc);
     hw.append(hc, ht, hh);
     rows.appendChild(hw);
+
+    // keep the button honest about which hours it will fill
+    d.__relabel = (job)=>{
+      const h = stdFor(iso, job);
+      std.textContent = pretty(h.start) + "–" + pretty(h.finish);
+    };
 
     std.addEventListener("click", ()=>{
       d.classList.add("open");
@@ -1008,6 +1190,28 @@ function todayISO(){
 function dowOf(iso){ return new Date(iso + "T12:00:00").getDay(); }   // 0 Sun .. 6 Sat
 
 function computeDay(iso, entries, hol){
+  if(FIXED){
+    // agreed day: every hour at basic. No break taken off, no overtime bands,
+    // no travel on top — the figure is all-in by agreement.
+    const out = { travel:0, travelJob:"", lines:[], onsite:0, gross:0, brk:0, paid:0, hol:0, fixed:true };
+    if(hol > 0){ out.hol = hol; out.paid = hol; return out; }
+    // count the hours even before a job is picked, so the totals read true.
+    // Sending is blocked until every day with hours has a job against it.
+    entries.forEach(e=>{
+      const h = e.fh || 0;
+      if(h > 0){
+        out.lines.push({ job:e.job||"", band:"BASIC", h, travel:false, other:e.other||"" });
+        out.onsite += h;
+      }
+    });
+    out.gross = out.onsite;
+    out.paid  = out.onsite;
+    return out;
+  }
+  return computeDayTimed(iso, entries, hol);
+}
+
+function computeDayTimed(iso, entries, hol){
   // entries: [{job, st, fi, isv, vref, vdesc}] in the order they were typed
   const out = { travel:0, travelJob:"", lines:[], onsite:0, gross:0, brk:0, paid:0, hol:0 };
   if(hol > 0){ out.hol = hol; out.paid = hol; return out; }
@@ -1085,7 +1289,8 @@ function collect(){
       const st  = r.querySelector(".st").value;
       const fi  = r.querySelector(".fi").value;
       const other = job === "OTHER" ? (r.querySelector(".othertxt")||{value:""}).value.trim() : "";
-      entries.push({ job, st, fi, other });
+      const fh = num((r.querySelector(".fh")||{value:""}).value);
+      entries.push({ job, st, fi, other, fh });
     });
     days.push({ iso, hol, entries, calc: computeDay(iso, entries, hol) });
   });
@@ -1161,7 +1366,7 @@ function recalc(){
   $("sShots").textContent  = allShots().length;
 
   // each entry shows what its times come to, before the break
-  document.querySelectorAll("#days .entry").forEach(r=>{
+  if(!FIXED) document.querySelectorAll("#days .entry").forEach(r=>{
     const h = spanHours(r.querySelector(".st").value, r.querySelector(".fi").value);
     const o = r.querySelector(".hrsout");
     const st = r.querySelector(".st").value, fi = r.querySelector(".fi").value;
@@ -1676,10 +1881,11 @@ function buildPayload(d){
     const c = day.calc;
     if(c.hol > 0){ L.push(["H", day.iso, "", "HOL", c.hol].join("|")); return; }
     // raw clocking, so the office can see what was actually entered
-    day.entries.forEach(e=>{
+    if(!c.fixed) day.entries.forEach(e=>{
       if(e.job && spanHours(e.st, e.fi) > 0)
         L.push(["S", day.iso, e.job, e.st, e.fi].join("|"));
     });
+    if(c.fixed) L.push(["F", day.iso, FIXED ? FIXED.fixedHours : ""].join("|"));
     if(c.brk) L.push(["K", day.iso, c.brk].join("|"));
     day.entries.forEach(e=>{
       if(e.job === "OTHER" && e.other && spanHours(e.st, e.fi) > 0)
@@ -1713,9 +1919,13 @@ function humanSummary(d){
     const nm = DAYS[i].name.slice(0,3) + " " + day.iso.slice(8,10) + "/" + day.iso.slice(5,7);
     if(c.hol > 0){ L.push("  " + nm + "  holiday " + c.hol + " hr"); return; }
     if(!c.onsite){ L.push("  " + nm + "  —"); return; }
-    const clock = day.entries.filter(e=>e.job && spanHours(e.st,e.fi)>0)
-                             .map(e=> e.job + (e.job==="OTHER" && e.other ? " ("+e.other+")" : "")
-                                      + " " + e.st + "-" + e.fi).join(", ");
+    const clock = c.fixed
+      ? day.entries.filter(e=>e.fh>0).map(e=> (e.job||"no job")
+          + (e.job==="OTHER" && e.other ? " ("+e.other+")" : "")
+          + "  " + (+e.fh) + " hr").join(", ")
+      : day.entries.filter(e=>e.job && spanHours(e.st,e.fi)>0)
+          .map(e=> e.job + (e.job==="OTHER" && e.other ? " ("+e.other+")" : "")
+                   + " " + e.st + "-" + e.fi).join(", ");
     const agg = {BASIC:0,"X1.5":0,X2:0}; let trav = 0;
     c.lines.forEach(l=>{ if(l.travel) trav += l.h; else agg[l.band] += l.h; });
     const parts = [];
@@ -1789,8 +1999,14 @@ function humanSummary(d){
     L.push("  NOT BOOKED until the office confirms it.");
   }
   if(d.notes){ L.push(""); L.push("NOTES"); L.push("  " + d.notes); }
-  L.push(""); L.push("Start and finish times are what the lad entered. The unpaid break, travel,");
-  L.push("time and a half and double time are worked out by the form.");
+  L.push("");
+  if(d.days.some(x=>x.calc.fixed)){
+    L.push("Agreed fixed day at basic rate. No break deducted, no overtime bands applied,");
+    L.push("no travel added — hours are as entered.");
+  } else {
+    L.push("Start and finish times are what the lad entered. The unpaid break, travel,");
+    L.push("time and a half and double time are worked out by the form.");
+  }
   L.push("");
   return L.join("\n");
 }
@@ -1819,12 +2035,13 @@ function validate(d){
     if(day.calc.gross > 16)
       return "That's " + (+day.calc.gross.toFixed(2)) + " hours on site in one day — check it before sending.";
     for(const e of day.entries){
-      if(e.st && e.fi && spanHours(e.st, e.fi) <= 0)
+      if(FIXED && e.fh > 0 && !e.job) return "One of your days has hours but no job picked.";
+      if(!FIXED && e.st && e.fi && spanHours(e.st, e.fi) <= 0)
         return "On " + day.iso + " the finish time is before the start time — have another look.";
-      if(spanHours(e.st, e.fi) > 0 && !e.job) return "One of your days has times but no job picked.";
-      if(e.job === "OTHER" && spanHours(e.st, e.fi) > 0 && !e.other)
+      if(!FIXED && spanHours(e.st, e.fi) > 0 && !e.job) return "One of your days has times but no job picked.";
+      if(e.job === "OTHER" && (FIXED ? e.fh > 0 : spanHours(e.st, e.fi) > 0) && !e.other)
         return "You've put Other for a job on " + day.iso + " — say what it was in the box.";
-      if(e.job && ((e.st && !e.fi) || (!e.st && e.fi)))
+      if(!FIXED && e.job && ((e.st && !e.fi) || (!e.st && e.fi)))
         return "One of your days has a start but no finish, or the other way round.";
     }
   }
