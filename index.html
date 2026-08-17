@@ -295,9 +295,34 @@ pre.payload{
     <input type="file" id="shotIn" accept="image/*" capture="environment" multiple hidden>
   </section>
 
-  <!-- 7. NOTES + SUMMARY -->
+  <!-- 7. HOLIDAY REQUEST -->
   <section class="card">
-    <h2><span class="n">7</span> Check and send</h2>
+    <h2><span class="n">7</span> Holiday request</h2>
+    <p class="hint">Only if you're asking for time off. This is a request, not booked — the office will come back to you. Nothing to do with holiday you've already taken this week.</p>
+    <div class="two">
+      <div class="field">
+        <label for="hFrom">First day off</label>
+        <input type="date" id="hFrom">
+      </div>
+      <div class="field">
+        <label for="hTo">Last day off</label>
+        <input type="date" id="hTo">
+      </div>
+    </div>
+    <div class="field">
+      <label for="hDays">Working days you're asking for</label>
+      <input type="number" id="hDays" min="0" max="60" step="0.5" inputmode="decimal" placeholder="0">
+      <div class="whohint" id="hCalc"></div>
+    </div>
+    <div class="field">
+      <label for="hNote">Anything the office should know</label>
+      <input id="hNote" placeholder="e.g. booked flights, or covering for me on Points Cross">
+    </div>
+  </section>
+
+  <!-- 8. NOTES + SUMMARY -->
+  <section class="card">
+    <h2><span class="n">8</span> Check and send</h2>
     <div class="sum">
       <table>
         <tr><td>Clocked on site</td><td id="sGross">0</td></tr>
@@ -313,6 +338,7 @@ pre.payload{
         <tr><td>Price work items</td><td id="sPw">0</td></tr>
         <tr><td>Expenses</td><td id="sEx">£0.00</td></tr>
         <tr><td>Photos attached</td><td id="sShots">0</td></tr>
+        <tr><td>Holiday requested</td><td id="sHolReq">none</td></tr>
       </table>
     </div>
     <div class="field">
@@ -324,7 +350,7 @@ pre.payload{
 
   <p class="foot">
     West End Joiners and Builders Ltd &middot; Farrar Mill, Rookery Lane, Halifax HX3 0PY<br>
-    Timesheet form <strong>v1.0 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
+    Timesheet form <strong>v1.1 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
     Trial version &mdash; if anything looks wrong, tell Adam or Will which day it was.
   </p>
 </main>
@@ -487,7 +513,18 @@ const BREAK_AFTER_HOURS = 6;   // shorter than this and no break is deducted
    NEEDS CONFIRMING — it changes what people get paid. */
 const TRAVEL_COUNTS_TOWARD_OT = false;
 
-const DAYS = ["Saturday","Sunday","Monday","Tuesday","Wednesday","Thursday","Friday"];
+/* Displayed Monday first. The pay week still runs Saturday to Friday and the week
+   ending is still the Friday, so Saturday and Sunday are the weekend at the START
+   of that week and sit at the bottom of the list. Offset is days from the Friday. */
+const DAYS = [
+  {name:"Monday",    off:-4},
+  {name:"Tuesday",   off:-3},
+  {name:"Wednesday", off:-2},
+  {name:"Thursday",  off:-1},
+  {name:"Friday",    off: 0},
+  {name:"Saturday",  off:-6},
+  {name:"Sunday",    off:-5}
+];
 
 // receipts and job cards photographed on the phone
 const SHOTS = [];        // {id, w, h, bytes:Uint8Array, thumb, job, desc}
@@ -506,12 +543,11 @@ const fmt = n => n.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFracti
 
 /* ---- week ending: the Friday of the current working week ---- */
 function defaultWeekEnding(){
+  // the Friday just gone — and today, if today is Friday
   const d = new Date();
-  // Sat/Sun roll forward to next Friday; Mon–Fri use this Friday.
-  const dow = d.getDay();                 // 0 Sun … 6 Sat
-  const delta = dow === 6 ? 6 : (5 - dow);
-  d.setDate(d.getDate() + delta);
-  return d.toISOString().slice(0,10);
+  const back = (d.getDay() - 5 + 7) % 7;   // 0 Sun .. 6 Sat, Friday = 5
+  d.setDate(d.getDate() - back);
+  return new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
 }
 function isoAddDays(iso, n){
   const d = new Date(iso + "T12:00:00");
@@ -558,6 +594,10 @@ function personType(){
 }
 
 $("who").addEventListener("input", recalc);
+["hFrom","hTo","hDays","hNote"].forEach(id=>{
+  const el0 = $(id);
+  if(el0){ el0.addEventListener("input", recalc); el0.addEventListener("change", recalc); }
+});
 
 /* ---- day rows ---- */
 // compact = true for the narrow day rows, false for the roomier price work /
@@ -634,8 +674,9 @@ function spanHours(st, fi){
 function buildDays(){
   const host = $("days"); host.innerHTML="";
   const we = $("we").value; if(!we) return;
-  DAYS.forEach((name,i)=>{
-    const iso = isoAddDays(we, i-6);
+  DAYS.forEach((day,i)=>{
+    const name = day.name;
+    const iso = isoAddDays(we, day.off);
     const d = el("div","day"); d.dataset.iso=iso;
     const dh = el("div","dh");
     const left = el("div");
@@ -777,6 +818,11 @@ $("addEx").addEventListener("click", ()=>{
    the travel allowance for the site, and how the day splits across basic,
    time and a half, and double. Nobody has to know the rules.              */
 
+function todayISO(){
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+}
+
 function dowOf(iso){ return new Date(iso + "T12:00:00").getDay(); }   // 0 Sun .. 6 Sat
 
 function computeDay(iso, entries, hol){
@@ -876,7 +922,12 @@ function collect(){
     const dsc = i.querySelector(".edesc").value.trim();
     if(amt > 0) ex.push({type, amt, job, dsc});
   });
-  return {name, type:personType(), we:$("we").value, days, pw, ex,
+  const hol = {
+    from: $("hFrom").value, to: $("hTo").value,
+    days: num($("hDays").value), note: $("hNote").value.trim()
+  };
+  hol.any = !!(hol.from || hol.to || hol.days > 0 || hol.note);
+  return {name, type:personType(), we:$("we").value, days, pw, ex, hol,
           notes:$("notes").value.trim()};
 }
 
@@ -962,6 +1013,27 @@ function recalc(){
   $("pwEmpty").style.display = document.querySelectorAll("#pw .item").length ? "none" : "";
   $("exEmpty").style.display = document.querySelectorAll("#ex .item").length ? "none" : "";
   $("loNote").style.display = personType() === "LO" ? "" : "none";
+
+  const h = d.hol;
+  const hc = $("hCalc");
+  if(h.from && h.to){
+    const a = new Date(h.from + "T12:00:00"), b = new Date(h.to + "T12:00:00");
+    if(b >= a){
+      let wd = 0;
+      for(let t = new Date(a); t <= b; t.setDate(t.getDate() + 1)){
+        const dw = t.getDay();
+        if(dw !== 0 && dw !== 6) wd++;
+      }
+      hc.textContent = wd + " weekday" + (wd === 1 ? "" : "s") + " between those dates"
+        + (h.days > 0 && Math.abs(h.days - wd) > 0.01 ? " — you have put " + h.days : "");
+    } else {
+      hc.textContent = "Last day is before the first day.";
+    }
+  } else hc.textContent = "";
+
+  $("sHolReq").textContent = h.any
+    ? (h.days > 0 ? h.days + " day" + (h.days === 1 ? "" : "s") : "dates only")
+    : "none";
 }
 
 
@@ -1308,6 +1380,8 @@ function buildPayload(d){
     L.push(["V", v.job, v.hours, v.ref, (v.desc||"").replace(/\|/g,"/"), v.shots.length].join("|")); });
   d.pw.forEach(x => L.push(["P", x.job, x.plot, x.type, x.qty, x.dsc].join("|")));
   d.ex.forEach(x => L.push(["E", x.type, x.amt.toFixed(2), x.job, x.dsc].join("|")));
+  if(d.hol.any) L.push(["R", d.hol.from, d.hol.to, d.hol.days,
+                        (d.hol.note||"").replace(/\|/g,"/")].join("|"));
   if(d.notes) L.push("N|" + d.notes.replace(/\r?\n/g," / "));
   L.push("END");
   return L.join("\n");
@@ -1321,7 +1395,7 @@ function humanSummary(d){
   L.push("DAY BY DAY");
   d.days.forEach((day,i)=>{
     const c = day.calc;
-    const nm = DAYS[i].slice(0,3) + " " + day.iso.slice(8,10) + "/" + day.iso.slice(5,7);
+    const nm = DAYS[i].name.slice(0,3) + " " + day.iso.slice(8,10) + "/" + day.iso.slice(5,7);
     if(c.hol > 0){ L.push("  " + nm + "  holiday " + c.hol + " hr"); return; }
     if(!c.onsite){ L.push("  " + nm + "  —"); return; }
     const clock = day.entries.filter(e=>e.job && spanHours(e.st,e.fi)>0)
@@ -1391,6 +1465,13 @@ function humanSummary(d){
   }
   const nph = allShots().length;
   if(nph) L.push("", nph + " photo(s) attached as a PDF.");
+  if(d.hol.any){
+    L.push(""); L.push("HOLIDAY REQUEST  (raised " + todayISO() + ")");
+    L.push("  " + (d.hol.from || "no start date") + "  to  " + (d.hol.to || "no end date"));
+    L.push("  Days asked for: " + (d.hol.days > 0 ? d.hol.days : "not stated"));
+    if(d.hol.note) L.push("  " + d.hol.note);
+    L.push("  NOT BOOKED until the office confirms it.");
+  }
   if(d.notes){ L.push(""); L.push("NOTES"); L.push("  " + d.notes); }
   L.push(""); L.push("Start and finish times are what the lad entered. The unpaid break, travel,");
   L.push("time and a half and double time are worked out by the form.");
@@ -1403,7 +1484,12 @@ function validate(d){
   if(!d.name) return "Put your name at the top.";
   if(d.name.trim().split(/\s+/).length < 2) return "Full name please — first name and surname.";
   if(!d.we)   return "Set the week ending date.";
-  if(!b.ONSITE && !b.HOL && !d.pw.length && !d.ex.length && !VARS.length)
+  if(d.hol.any){
+    if(!d.hol.from || !d.hol.to) return "Holiday request needs both a first and a last day off.";
+    if(d.hol.to < d.hol.from)    return "Holiday request: the last day is before the first day.";
+    if(!(d.hol.days > 0))        return "Holiday request needs the number of working days you want.";
+  }
+  if(!b.ONSITE && !b.HOL && !d.pw.length && !d.ex.length && !VARS.length && !d.hol.any)
     return "Nothing to send yet — add some hours, price work or expenses.";
   for(let i = 0; i < VARS.length; i++){
     const v = VARS[i];
@@ -1436,7 +1522,8 @@ $("sendBtn").addEventListener("click", async ()=>{
   if(problem){ err.textContent = problem; err.classList.add("on"); window.scrollTo({top:0,behavior:"smooth"}); return; }
   err.classList.remove("on");
 
-  const subj = "Timesheet — " + d.name + " — w/e " + d.we;
+  const subj = "Timesheet — " + d.name + " — w/e " + d.we
+             + (d.hol.any ? "  + HOLIDAY REQUEST" : "");
   const body = fullBody(d);
   $("preview").textContent = body;
   $("preview").style.display = "";
