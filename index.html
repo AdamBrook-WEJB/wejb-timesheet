@@ -468,7 +468,7 @@ pre.payload{
 
   <p class="foot">
     West End Joiners and Builders Ltd &middot; Farrar Mill, Rookery Lane, Halifax HX3 0PY<br>
-    Timesheet form <strong>v2.6 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
+    Timesheet form <strong>v2.7 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
     Trial version &mdash; if anything looks wrong, tell Adam or Will which day it was.
   </p>
 </main>
@@ -1131,7 +1131,11 @@ function buildDays(){
       const me = days.indexOf(d);
       let src = null;
       for(let k = me - 1; k >= 0; k--){
-        if(days[k].querySelector(".entry select.job").value){ src = days[k]; break; }
+        const e0 = days[k].querySelector(".entry");
+        const has = e0 && (e0.querySelector("select.job").value
+                        || (e0.querySelector(".fh") || {value:""}).value
+                        || e0.querySelector(".st").value);
+        if(has){ src = days[k]; break; }
       }
       if(!src){
         const err = $("err");
@@ -1156,7 +1160,10 @@ function buildDays(){
           row.querySelector(".othertxt").value =
             (se.querySelector(".othertxt")||{value:""}).value;
         }
-        // same times, but shifted to this day's own standard finish if it differs
+        // an agreed day copies hours; everyone else copies the clocking times
+        const sfh = (se.querySelector(".fh") || {value:""}).value;
+        if(sfh) row.querySelector(".fh").value = sfh;
+
         const sst = se.querySelector(".st").value, sfi = se.querySelector(".fi").value;
         row.querySelector(".st").value = sst;
         const srcStd = stdFor(src.dataset.iso, job), myStd = stdFor(iso, job);
