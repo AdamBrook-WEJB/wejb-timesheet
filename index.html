@@ -182,6 +182,12 @@ pre.payload{
   line-height:1.5;overflow-x:auto;white-space:pre;margin:10px 0 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace
 }
 .shotbtn{display:block;text-align:center;padding:12px 9px}
+.pwgo{
+  display:block;text-align:center;text-decoration:none;padding:13px 9px;
+  border-style:solid;background:var(--blue);color:#fff;border-color:var(--blue);font-size:15px
+}
+.pwgo.off{background:#eef2f6;color:#9aabb9;border-color:var(--line);pointer-events:none}
+.pwnote{font-size:12.5px;color:var(--mid);margin-top:10px;line-height:1.45}
 .vitem{border:1px solid #f0d5a8;border-radius:10px;padding:12px;margin-bottom:11px;background:#fffdf8;position:relative}
 .vitem .rm{position:absolute;top:8px;right:8px;border:none;background:none;color:var(--danger);font-size:18px;cursor:pointer;padding:2px 6px;font-weight:600}
 .vitem .vhead{font-size:11.5px;font-weight:700;color:var(--warn);text-transform:uppercase;letter-spacing:.5px;margin:0 0 10px}
@@ -261,10 +267,17 @@ pre.payload{
   <!-- 3. PRICE WORK -->
   <section class="card">
     <h2><span class="n">3</span> Price work</h2>
-    <p class="hint">Only if you're on price. Enter what you finished this week — the plot or area, what it was, and how many.</p>
-    <div id="pw"></div>
-    <div class="empty" id="pwEmpty">Nothing added</div>
-    <button class="addrow" id="addPw" type="button">+ Add price work</button>
+    <p class="hint">Price work is on a separate sheet for each site, so you only see the rates for the job you're on. Pick your site and it opens in a new tab — this timesheet stays open behind it.</p>
+    <div class="field">
+      <label for="pwSite">Which site are you on price at?</label>
+      <select id="pwSite">
+        <option value="">— choose a site —</option>
+      </select>
+    </div>
+    <a class="addrow pwgo" id="pwGo" href="#" target="_blank" rel="noopener">Open price sheet</a>
+    <div class="pwnote" id="pwNote">
+      You'll need that site's password. Ask Adam or Will if you haven't got it.
+    </div>
   </section>
 
   <!-- 4. VARIATIONS -->
@@ -335,7 +348,6 @@ pre.payload{
         <tr><td>Holiday</td><td id="sHol">0</td></tr>
         <tr class="big"><td>Total paid hours</td><td id="sTotal">0</td></tr>
         <tr class="var"><td>of which variation work</td><td id="sVar">0</td></tr>
-        <tr><td>Price work items</td><td id="sPw">0</td></tr>
         <tr><td>Expenses</td><td id="sEx">£0.00</td></tr>
         <tr><td>Photos attached</td><td id="sShots">0</td></tr>
         <tr><td>Holiday requested</td><td id="sHolReq">none</td></tr>
@@ -350,7 +362,7 @@ pre.payload{
 
   <p class="foot">
     West End Joiners and Builders Ltd &middot; Farrar Mill, Rookery Lane, Halifax HX3 0PY<br>
-    Timesheet form <strong>v1.1 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
+    Timesheet form <strong>v1.2 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
     Trial version &mdash; if anything looks wrong, tell Adam or Will which day it was.
   </p>
 </main>
@@ -471,7 +483,13 @@ const PEOPLE = [
 ];
 
 // Price work item types.
-const PW_ITEMS = [
+/* Sites where price work is carried out. "file" sits alongside this page.
+   Add a line here when a new site's price sheet goes up. */
+const PRICE_SITES = [
+  {code:"901", name:"Furness / Oaklands", file:"901-furness.html"}
+];
+
+const PW_ITEMS_UNUSED = [
   "Kitchen units","Worktops","Toilet roll holders","Internal doors","Door linings",
   "Skirting & architrave","Ironmongery","Wardrobes","Stairs","Handrail",
   "Other — say below"
@@ -731,48 +749,6 @@ $("we").addEventListener("change", buildDays);
 buildDays();
 
 /* ---- price work ---- */
-$("addPw").addEventListener("click", ()=>{
-  const host = $("pw");
-  const it = el("div","item");
-
-  const rm = el("button","rm"); rm.type="button"; rm.innerHTML="×";
-  rm.addEventListener("click", ()=>{ it.remove(); recalc(); });
-
-  const f1 = el("div","field");
-  const l1 = el("label"); l1.textContent="Job";
-  const js = jobSelect(false); js.classList.remove("job");
-  f1.append(l1, js);
-
-  const two = el("div","two");
-  const f2 = el("div","field");
-  const l2 = el("label"); l2.textContent="Plot / area";
-  const p = el("input"); p.placeholder="e.g. Plot 12, Show flat"; p.className="plot";
-  f2.append(l2,p);
-  const f3 = el("div","field");
-  const l3 = el("label"); l3.textContent="How many";
-  const q = el("input"); q.type="number"; q.min="0"; q.step="1"; q.placeholder="0";
-  q.inputMode="numeric"; q.className="qty";
-  f3.append(l3,q);
-  two.append(f2,f3);
-
-  const f4 = el("div","field");
-  const l4 = el("label"); l4.textContent="What was it";
-  const s = el("select"); s.className="itemtype";
-  PW_ITEMS.forEach(x=>{ const o=el("option"); o.value=x; o.textContent=x; s.appendChild(o); });
-  f4.append(l4,s);
-
-  const f5 = el("div","field");
-  const l5 = el("label"); l5.textContent="Detail (optional)";
-  const dsc = el("input"); dsc.placeholder="anything else about it"; dsc.className="pdesc";
-  f5.append(l5,dsc);
-
-  it.append(rm,f1,two,f4,f5);
-  it.addEventListener("input", recalc);
-  it.addEventListener("change", recalc);
-  host.appendChild(it);
-  recalc();
-});
-
 /* ---- expenses ---- */
 $("addEx").addEventListener("click", ()=>{
   const host = $("ex");
@@ -905,15 +881,7 @@ function collect(){
     });
     days.push({ iso, hol, entries, calc: computeDay(iso, entries, hol) });
   });
-  const pw = [];
-  document.querySelectorAll("#pw .item").forEach(i=>{
-    const job = i.querySelector("select").value;
-    const plot= i.querySelector(".plot").value.trim();
-    const qty = num(i.querySelector(".qty").value);
-    const type= i.querySelector(".itemtype").value;
-    const dsc = i.querySelector(".pdesc").value.trim();
-    if(qty > 0 && job) pw.push({job, plot, qty, type, dsc});
-  });
+  const pw = [];   // price work now goes in on the site's own sheet
   const ex = [];
   document.querySelectorAll("#ex .item").forEach(i=>{
     const type= i.querySelector(".extype").value;
@@ -959,7 +927,6 @@ function recalc(){
   const paid = b.BASIC + b["X1.5"] + b.X2 + b.HOL;
   $("sTotal").textContent  = paid ? +paid.toFixed(2) : "0";
   $("sVar").textContent    = b.VAR ? +b.VAR.toFixed(2) : "0";
-  $("sPw").textContent     = d.pw.length;
   $("sEx").textContent     = "£" + fmt(d.ex.reduce((a,x)=>a+x.amt,0));
   $("sShots").textContent  = allShots().length;
 
@@ -1010,7 +977,6 @@ function recalc(){
     bd.innerHTML = bits.join("") + `<span class="paid">paid ${+c.paid.toFixed(2)} hr</span>`;
   });
 
-  $("pwEmpty").style.display = document.querySelectorAll("#pw .item").length ? "none" : "";
   $("exEmpty").style.display = document.querySelectorAll("#ex .item").length ? "none" : "";
   $("loNote").style.display = personType() === "LO" ? "" : "none";
 
@@ -1037,6 +1003,34 @@ function recalc(){
 }
 
 
+
+/* ---- price work: hand off to the site's own sheet ---- */
+(function(){
+  const sel = $("pwSite"), go = $("pwGo"), note = $("pwNote");
+  PRICE_SITES.forEach(x => {
+    const o = el("option"); o.value = x.file;
+    o.textContent = x.code + " " + x.name; o.dataset.code = x.code;
+    sel.appendChild(o);
+  });
+  const sync = () => {
+    const opt = sel.selectedOptions[0];
+    if(sel.value){
+      go.href = sel.value;
+      go.textContent = "Open the " + opt.dataset.code + " price sheet";
+      go.classList.remove("off");
+      note.textContent = "You'll need the password for " + opt.textContent
+                       + ". Ask Adam or Will if you haven't got it.";
+    } else {
+      go.href = "#";
+      go.textContent = "Open price sheet";
+      go.classList.add("off");
+      note.textContent = "Not every site has price work. If yours isn't listed, "
+                       + "put your hours in as normal and speak to the office.";
+    }
+  };
+  sel.addEventListener("change", sync);
+  sync();
+})();
 
 /* ---- variation work --------------------------------------------------------
    Kept apart from the day-by-day hours on purpose. The days are what the lad
