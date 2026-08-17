@@ -468,7 +468,7 @@ pre.payload{
 
   <p class="foot">
     West End Joiners and Builders Ltd &middot; Farrar Mill, Rookery Lane, Halifax HX3 0PY<br>
-    Timesheet form <strong>v2.2 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
+    Timesheet form <strong>v2.6 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
     Trial version &mdash; if anything looks wrong, tell Adam or Will which day it was.
   </p>
 </main>
@@ -782,18 +782,36 @@ function personType(){
 
 // keys are matched loosely, so "Craig Potts", "CRAIG POTTS" and "craig potts" all work
 let _usualMap = null;
+/* A day's holiday is worth a normal day. The four on an agreed day get their
+   agreed hours every day of the week, Friday included. Everyone else gets 8,
+   and 7 on a Friday because that is their short day. */
+function holDefault(iso){
+  if(FIXED) return FIXED.fixedHours;
+  return (iso && dowOf(iso) === 5) ? 7 : 8;
+}
+
+function syncHolidayHours(){
+  document.querySelectorAll("#days .day").forEach(d=>{
+    const inp = d.querySelector(".holhrs");
+    if(inp && inp.dataset.auto) inp.value = holDefault(d.dataset.iso);
+  });
+}
+
 function setFixedMode(){
   const hit = matchPerson($("who").value.trim());
   const u = hit ? usualFor(hit.n) : null;
+  const was = FIXED;
   FIXED = (u && u.fixedHours) ? u : null;
   document.body.classList.toggle("fixedmode", !!FIXED);
+  if((was && was.fixedHours) !== (FIXED && FIXED.fixedHours)) syncHolidayHours();
   const n = $("fixedNote");
   if(n){
     if(FIXED){
       n.style.display = "";
       n.innerHTML = "You are on an agreed <strong>" + FIXED.fixedHours
         + " hour day at basic rate</strong>, so put your hours down rather than your times. "
-        + "No break is taken off and no overtime is added — that is what was agreed.";
+        + "No break is taken off and no overtime is added, and a day's holiday counts as "
+        + FIXED.fixedHours + " hours including Fridays — that is what was agreed.";
     } else n.style.display = "none";
   }
 }
@@ -809,7 +827,7 @@ function usualFor(name){
 
 function sheetUntouched(){
   for(const d of document.querySelectorAll("#days .day")){
-    if(d.querySelector(".holchk").checked) return false;
+    const hc0 = d.querySelector(".holchk"); if(hc0 && hc0.checked) return false;
     for(const e of d.querySelectorAll(".entry")){
       if(e.querySelector("select.job").value) return false;
       if(e.querySelector(".st").value || e.querySelector(".fi").value) return false;
@@ -821,7 +839,7 @@ function sheetUntouched(){
 
 function clearWeek(){
   document.querySelectorAll("#days .day").forEach(d=>{
-    d.querySelector(".holchk").checked = false;
+    const hc1 = d.querySelector(".holchk"); if(hc1) hc1.checked = false;
     d.classList.remove("isHol");
     d.querySelectorAll(".entry").forEach((e,i)=>{
       if(i > 0){ e.remove(); return; }
@@ -846,19 +864,44 @@ function applyUsualWeek(){
   const hit = matchPerson($("who").value.trim());
   const who = hit ? hit.n : null;
   const usual = usualFor(who);
-  if(!usual || !sheetUntouched() || prefilledFor === who) return;
+  if(!usual || prefilledFor === who) return;
 
   const days = [...document.querySelectorAll("#days .day")];
   const want = usual.days || [0,1,2,3,4];
+
+  /* An agreed fixed day only ever writes into an EMPTY hours box, so it is safe
+     to run whether or not the lad has already picked his sites. Everything else
+     fills times, which is riskier, so that still needs a clean sheet.        */
+  if(usual.fixedHours){
+    let put = 0;
+    want.forEach(n=>{
+      const d = days[n]; if(!d) return;
+      const hc2 = d.querySelector(".holchk");
+      if(hc2 && hc2.checked) return;      // he has said he was off
+      const e = d.querySelector(".entry"); if(!e) return;
+      const box = e.querySelector(".fh");
+      if(box.value) return;                                // he has already put hours
+      box.value = usual.fixedHours;
+      d.classList.add("open");
+      put++;
+    });
+    if(!put) return;
+    prefilledFor = who;
+    $("prefillTxt").innerHTML = "Put your agreed <strong>" + usual.fixedHours
+      + " hours a day</strong> in for " + put + " day" + (put===1?"":"s")
+      + ". <strong>Check every day</strong> — change the hours if you did fewer, "
+      + "tick Holiday for days off, and pick the job you were on.";
+    $("prefill").style.display = "";
+    recalc();
+    return;
+  }
+
+  if(!sheetUntouched()) return;
   want.forEach(n=>{
-    const d = days[n];
-    if(!d) return;
-    const e = d.querySelector(".entry");
-    if(!e) return;
+    const d = days[n]; if(!d) return;
+    const e = d.querySelector(".entry"); if(!e) return;
     e.querySelector("select.job").value = usual.job || "";
-    if(usual.fixedHours){
-      e.querySelector(".fh").value = usual.fixedHours;
-    } else if(PREFILL_TIMES){
+    if(PREFILL_TIMES){
       const std = stdFor(d.dataset.iso, usual.job);
       e.querySelector(".st").value = usual.start  || std.start;
       e.querySelector(".fi").value = usual.finish || std.finish;
@@ -866,7 +909,6 @@ function applyUsualWeek(){
     d.classList.add("open");
   });
   prefilledFor = who;
-
   const jn = (JOBS.find(x=>x.code === usual.job) || {}).name || usual.job || "your usual site";
   $("prefillTxt").innerHTML = "Filled in with your usual week on <strong>" + jn + "</strong>. "
     + "<strong>Check every day</strong> and change anything that is not right — "
@@ -1047,8 +1089,11 @@ function buildDays(){
     const hw = el("label","holwrap");
     const hc = el("input"); hc.type="checkbox"; hc.className="holchk";
     const ht = el("span"); ht.textContent = "Holiday";
-    const hh = el("input"); hh.type="number"; hh.step="0.5"; hh.min="0"; hh.max="12";
-    hh.value="8"; hh.className="holhrs"; hh.style.display="none"; hh.inputMode="decimal";
+    const hh = el("input"); hh.type="number"; hh.step="0.5"; hh.min="0"; hh.max="24";
+    hh.value = holDefault(iso); hh.className="holhrs"; hh.style.display="none";
+    hh.inputMode="decimal";
+    hh.dataset.auto = "1";                       // still ours to change
+    hh.addEventListener("input", ()=>{ hh.dataset.auto = ""; });
     hc.addEventListener("change", ()=>{
       const on = hc.checked;
       hh.style.display = on ? "" : "none";
@@ -1059,6 +1104,9 @@ function buildDays(){
     });
     hh.addEventListener("input", recalc);
     hw.append(hc, ht, hh);
+    // holiday is a weekday thing; nobody books a Saturday off. Kept in the page
+    // but out of sight, so everything that reads it still works.
+    if(day.name === "Saturday" || day.name === "Sunday") hw.style.display = "none";
     rows.appendChild(hw);
 
     // keep the button honest about which hours it will fill
@@ -1281,7 +1329,8 @@ function collect(){
   const days = [];
   document.querySelectorAll("#days .day").forEach(d=>{
     const iso = d.dataset.iso;
-    const holOn = d.querySelector(".holchk").checked;
+    const hcE = d.querySelector(".holchk");
+    const holOn = !!(hcE && hcE.checked);
     const hol = holOn ? num(d.querySelector(".holhrs").value) : 0;
     const entries = [];
     d.querySelectorAll(".entry").forEach(r=>{
