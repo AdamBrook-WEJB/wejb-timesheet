@@ -179,6 +179,7 @@ body.fixedmode .stdbtn:not(.asabove){display:none}
 /* repeat blocks (price work, expenses) */
 .item{border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:10px;background:#fbfdff;position:relative}
 .item.ismiles{background:#f5fbff;border-color:#a7d3f0}
+.mnote{font-size:12.5px;font-weight:700;color:var(--blue);margin:-4px 0 10px}
 .item .rm{position:absolute;top:8px;right:8px;border:none;background:none;color:var(--danger);font-size:18px;cursor:pointer;padding:2px 6px;font-weight:600}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .hint{font-size:12.5px;color:var(--mid);margin:-4px 0 12px;line-height:1.4}
@@ -470,7 +471,7 @@ pre.payload{
 
   <p class="foot">
     West End Joiners and Builders Ltd &middot; Farrar Mill, Rookery Lane, Halifax HX3 0PY<br>
-    Timesheet form <strong>v2.8 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
+    Timesheet form <strong>v2.9 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
     Trial version &mdash; if anything looks wrong, tell Adam or Will which day it was.
   </p>
 </main>
@@ -504,6 +505,9 @@ const SUBMIT_URL = "https://api.web3forms.com/submit";
 /* Anything that could not be sent is held on the phone and goes by itself once
    there is signal. Sites have no coverage; this is not optional. */
 const QUEUE_KEY = "wejb.timesheet.queue.v1";
+
+/* Mileage is claimed in miles and priced here, so the lad sees his money. */
+const MILEAGE_RATE = 0.35;   // £ per mile
 
 // Live jobs. Code is what lands in the LABOUR COSTS matrix — keep it matching
 // the job numbers already used in the per-job cost sheets.
@@ -1215,8 +1219,10 @@ $("addEx").addEventListener("click", ()=>{
   a.inputMode="decimal"; a.className="amt";
   f2.append(l2,a);
   // mileage is claimed in miles; the office puts the rate to it
+  const mnote = el("div","mnote"); mnote.style.display = "none";
   const setMode = ()=>{
     const miles = s.value === "Mileage";
+    mnote.style.display = miles ? "" : "none";
     it.classList.toggle("ismiles", miles);
     l2.textContent = miles ? "Miles" : "Amount £";
     a.step = miles ? "1" : "0.01";
@@ -1236,7 +1242,12 @@ $("addEx").addEventListener("click", ()=>{
   const d = el("input"); d.placeholder="e.g. staples for Oastlers"; d.className="edesc";
   f4.append(l4,d);
 
-  it.append(rm,two,f3,f4);
+  it.append(rm,two,mnote,f3,f4);
+  const showM = ()=>{ const v = num(a.value);
+    mnote.textContent = v ? (+v) + " miles at " + (MILEAGE_RATE*100).toFixed(0)
+      + "p  =  £" + fmt(v * MILEAGE_RATE) : ""; };
+  a.addEventListener("input", showM); s.addEventListener("change", showM);
+  it.append(mnote);
   it.addEventListener("input", recalc);
   it.addEventListener("change", recalc);
   host.appendChild(it);
@@ -1435,7 +1446,8 @@ function recalc(){
   $("sVar").textContent    = b.VAR ? +b.VAR.toFixed(2) : "0";
   $("sEx").textContent     = "£" + fmt(d.ex.reduce((a,x)=>a+x.amt,0));
   const totMiles = d.miles.reduce((a,x)=>a+x.miles,0);
-  $("sMiles").textContent  = totMiles ? (+totMiles.toFixed(0)) + " miles" : "0";
+  $("sMiles").textContent  = totMiles
+    ? (+totMiles.toFixed(0)) + " miles  ·  £" + fmt(totMiles * MILEAGE_RATE) : "0";
   $("sShots").textContent  = allShots().length;
 
   // each entry shows what its times come to, before the break
@@ -1495,7 +1507,7 @@ function recalc(){
   const mv = d.miles.reduce((a,x)=>a+x.miles,0);
   const bits5 = [];
   if(d.ex.length) bits5.push("£" + fmt(xv));
-  if(mv)          bits5.push((+mv.toFixed(0)) + " miles");
+  if(mv)          bits5.push((+mv.toFixed(0)) + " miles £" + fmt(mv * MILEAGE_RATE));
   setBadge("5", nx ? bits5.join(", ") : "none", !!nx);
   const np = allShots().length;
   setBadge("6", np ? np + " photo" + (np===1?"":"s") : "none", !!np);
@@ -1979,7 +1991,8 @@ function buildPayload(d){
     L.push(["V", v.job, v.hours, v.ref, (v.desc||"").replace(/\|/g,"/"), v.shots.length].join("|")); });
   d.pw.forEach(x => L.push(["P", x.job, x.plot, x.type, x.qty, x.dsc].join("|")));
   d.ex.forEach(x => L.push(["E", x.type, x.amt.toFixed(2), x.job, x.dsc].join("|")));
-  d.miles.forEach(x => L.push(["M", x.miles, x.job, x.dsc].join("|")));
+  d.miles.forEach(x => L.push(["M", x.miles, MILEAGE_RATE.toFixed(2),
+                               (x.miles * MILEAGE_RATE).toFixed(2), x.job, x.dsc].join("|")));
   if(d.hol.any) L.push(["R", d.hol.from, d.hol.to, d.hol.days,
                         (d.hol.note||"").replace(/\|/g,"/")].join("|"));
   if(d.notes) L.push("N|" + d.notes.replace(/\r?\n/g," / "));
@@ -2064,10 +2077,11 @@ function humanSummary(d){
     L.push("  Total £" + fmt(d.ex.reduce((a,x)=>a+x.amt,0)));
   }
   if(d.miles.length){
-    L.push(""); L.push("MILEAGE  (miles only — office to apply the rate)");
-    d.miles.forEach(x => L.push("  " + (+x.miles) + " miles"
-                             + (x.job ? " — job " + x.job : "") + (x.dsc ? " — " + x.dsc : "")));
-    L.push("  Total " + (+d.miles.reduce((a,x)=>a+x.miles,0)) + " miles");
+    const tm = d.miles.reduce((a,x)=>a+x.miles,0);
+    L.push(""); L.push("MILEAGE  (at " + (MILEAGE_RATE*100).toFixed(0) + "p per mile)");
+    d.miles.forEach(x => L.push("  " + (+x.miles) + " miles  =  £" + fmt(x.miles * MILEAGE_RATE)
+                             + (x.job ? "   job " + x.job : "") + (x.dsc ? "   " + x.dsc : "")));
+    L.push("  Total " + (+tm) + " miles  =  £" + fmt(tm * MILEAGE_RATE));
   }
   if(SHOTS.length){
     L.push(""); L.push("RECEIPTS / JOB CARDS");
@@ -2211,8 +2225,10 @@ function showSent(d, queued, photos){
   if(nv) rows.push(["Variation work", nv + (nv===1?" job, ":" jobs, ")
                     + (+b.VAR.toFixed(2)) + " hr"]);
   if(d.ex.length) rows.push(["Expenses", "£" + fmt(d.ex.reduce((a,x)=>a+x.amt,0))]);
-  if(d.miles.length) rows.push(["Mileage",
-      (+d.miles.reduce((a,x)=>a+x.miles,0).toFixed(0)) + " miles"]);
+  if(d.miles.length){
+    const tm = d.miles.reduce((a,x)=>a+x.miles,0);
+    rows.push(["Mileage", (+tm.toFixed(0)) + " miles, £" + fmt(tm * MILEAGE_RATE)]);
+  }
   if(d.hol.any) rows.push(["Holiday request", d.hol.days + " day"
                           + (d.hol.days===1?"":"s") + " asked for"]);
   rows.push(["BIG", "Total paid hours", (+(b.BASIC + b["X1.5"] + b.X2 + b.HOL).toFixed(2)) + " hr"]);
