@@ -202,6 +202,8 @@ button.ghost{
 .err.on{display:block}
 .done{background:#ecfdf3;border:1px solid #a6f4c5;color:var(--ok);border-radius:9px;padding:12px;font-size:14px;margin-bottom:12px;display:none}
 .done.on{display:block}
+.qnote{background:#fffaf1;border:1px solid #f0d5a8;color:var(--warn);border-radius:9px;
+ padding:11px 12px;font-size:13.5px;margin-bottom:12px;line-height:1.45}
 pre.payload{
   background:#0f1720;color:#d7e3ee;border-radius:9px;padding:11px;font-size:11.5px;
   line-height:1.5;overflow-x:auto;white-space:pre;margin:10px 0 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace
@@ -261,6 +263,7 @@ pre.payload{
 <main>
   <div class="err" id="err"></div>
   <div class="done" id="done"></div>
+  <div class="qnote" id="qNote" style="display:none"></div>
 
   <!-- 1. WHO / WHEN -->
   <section class="card">
@@ -387,14 +390,14 @@ pre.payload{
 
   <p class="foot">
     West End Joiners and Builders Ltd &middot; Farrar Mill, Rookery Lane, Halifax HX3 0PY<br>
-    Timesheet form <strong>v1.5 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
+    Timesheet form <strong>v1.7 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
     Trial version &mdash; if anything looks wrong, tell Adam or Will which day it was.
   </p>
 </main>
 
 <div class="bar">
   <div class="inner">
-    <button class="ghost" id="copyBtn" type="button">Copy</button>
+    <button class="ghost" id="copyBtn" type="button">Email instead</button>
     <button class="primary" id="sendBtn" type="button">Send timesheet</button>
   </div>
 </div>
@@ -408,6 +411,19 @@ pre.payload{
 // Where submissions go. Change to a dedicated inbox once one exists.
 const SEND_TO = "adam@westendjoiners.co.uk";     // trial: Adam checks them himself
 const SEND_CC = "";                              // no cc during the trial
+
+/* --- REAL SEND -------------------------------------------------------------
+   Paste the Web3Forms access key between the quotes and the Send button posts
+   the sheet straight through — the lad never touches his email app. Leave it
+   empty and the form falls back to opening an email, exactly as before, so it
+   is safe to publish either way.
+   Key from web3forms.com — enter the address above, they email you a key.   */
+const SUBMIT_KEY = "db8d7de8-fd26-431d-9ea6-fe060444495e";
+const SUBMIT_URL = "https://api.web3forms.com/submit";
+
+/* Anything that could not be sent is held on the phone and goes by itself once
+   there is signal. Sites have no coverage; this is not optional. */
+const QUEUE_KEY = "wejb.timesheet.queue.v1";
 
 // Live jobs. Code is what lands in the LABOUR COSTS matrix — keep it matching
 // the job numbers already used in the per-job cost sheets.
@@ -1087,6 +1103,83 @@ function recalc(){
 
 
 
+
+/* ---- sending for real, with a queue behind it ------------------------------
+   Storage is wrapped because some environments block it. If it is unavailable
+   we say so plainly rather than pretending something was saved.            */
+
+function storeOK(){
+  try{ const k="__t"; localStorage.setItem(k,"1"); localStorage.removeItem(k); return true; }
+  catch(e){ return false; }
+}
+const HAS_STORE = storeOK();
+
+function queueRead(){
+  if(!HAS_STORE) return [];
+  try{ return JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]"); }catch(e){ return []; }
+}
+function queueWrite(a){
+  if(!HAS_STORE) return false;
+  try{ localStorage.setItem(QUEUE_KEY, JSON.stringify(a)); return true; }catch(e){ return false; }
+}
+function queueAdd(item){ const a = queueRead(); a.push(item); return queueWrite(a); }
+
+async function postOne(item){
+  if(!SUBMIT_KEY) throw new Error("no key");
+  const res = await fetch(SUBMIT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      access_key: SUBMIT_KEY,
+      subject: item.subject,
+      from_name: item.name || "WEJB timesheet",
+      // web3forms mails these through; message carries the whole sheet
+      message: item.body,
+      name: item.name,
+      week_ending: item.we,
+      submitted_at: item.at
+    })
+  });
+  let ok = res.ok;
+  try{ const j = await res.json(); ok = ok && j.success !== false; }catch(e){}
+  if(!ok) throw new Error("rejected");
+  return true;
+}
+
+let flushing = false;
+async function queueFlush(){
+  if(flushing || !SUBMIT_KEY) return;
+  const a = queueRead();
+  if(!a.length){ showQueue(); return; }
+  flushing = true;
+  const left = [];
+  for(const item of a){
+    try{ await postOne(item); }catch(e){ left.push(item); }
+  }
+  queueWrite(left);
+  flushing = false;
+  showQueue();
+  if(a.length && !left.length){
+    const done = $("done");
+    done.innerHTML = "The " + a.length + " sheet" + (a.length===1?"":"s")
+      + " waiting on your phone " + (a.length===1?"has":"have") + " just gone through.";
+    done.classList.add("on");
+  }
+}
+
+function showQueue(){
+  const n = queueRead().length;
+  const el0 = $("qNote");
+  if(!el0) return;
+  if(n){
+    el0.style.display = "";
+    el0.innerHTML = "<strong>" + n + " sheet" + (n===1?"":"s") + " waiting to send.</strong> "
+      + "They will go by themselves as soon as you have signal. You can close this page.";
+  } else el0.style.display = "none";
+}
+
+window.addEventListener("online", queueFlush);
+
 /* ---- price work: hand off to the site's own sheet ---- */
 (function(){
   const sel = $("pwSite"), go = $("pwGo"), note = $("pwNote");
@@ -1599,88 +1692,96 @@ function validate(d){
 
 function fullBody(d){ return humanSummary(d) + "\n" + buildPayload(d) + "\n"; }
 
-$("sendBtn").addEventListener("click", async ()=>{
+function mailtoFallback(d, body, subj){
+  window.location.href = "mailto:" + encodeURIComponent(SEND_TO)
+    + (SEND_CC ? "&cc=" + encodeURIComponent(SEND_CC) : "")
+    + "?subject=" + encodeURIComponent(subj)
+    + "&body=" + encodeURIComponent(body);
+}
+
+async function doSend(viaEmail){
   const d = collect();
   const problem = validate(d);
   const err = $("err"), done = $("done");
-  if(problem){ err.textContent = problem; err.classList.add("on"); window.scrollTo({top:0,behavior:"smooth"}); return; }
-  err.classList.remove("on");
+  if(problem){ err.textContent = problem; err.classList.add("on");
+               window.scrollTo({top:0,behavior:"smooth"}); return; }
+  err.classList.remove("on"); done.classList.remove("on");
 
+  const body = fullBody(d);
   const subj = "Timesheet — " + d.name + " — w/e " + d.we
              + (d.hol.any ? "  + HOLIDAY REQUEST" : "");
-  const body = fullBody(d);
   $("preview").textContent = body;
   $("preview").style.display = "";
 
-  // with receipts, try to hand the phone the PDF and the text together
   const photos = allShots();
-  if(photos.length){
-    let file = null;
-    try{
-      const blob = buildPdf(
-        [ "West End Joiners and Builders Ltd",
-          d.name + "  —  week ending " + d.we,
-          photos.length + " photo(s): receipts, job cards and variation works",
-          "Sent from the WEJB timesheet form" ],
-        photos);
-      file = new File([blob], pdfName(d), { type: "application/pdf" });
-    }catch(e){ file = null; }
+  const item = { subject: subj, body, name: d.name, we: d.we,
+                 at: new Date().toISOString() };
 
-    if(file && navigator.canShare && navigator.canShare({ files:[file] })){
-      try{
-        await navigator.share({ files:[file], title: subj, text: body });
-        done.innerHTML = "Sent through with the receipts attached.";
-        done.classList.add("on");
-        return;
-      }catch(e){
-        if(e && e.name === "AbortError") return;      // he backed out, leave it be
-      }
-    }
-    if(file){
-      const url = URL.createObjectURL(file);
-      const a = el("a"); a.href = url; a.download = file.name;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url), 30000);
-      done.innerHTML = "Your photos have been saved as <strong>" + file.name + "</strong>. "
-        + "Your email app should open next \u2014 <strong>attach that PDF before you send.</strong>";
-      done.classList.add("on");
-    }
-  } else {
-    done.innerHTML = "Your email app should have opened with everything filled in \u2014 "
-      + "<strong>you still need to press send in there.</strong> If nothing opened, tap Copy "
-      + "and paste it into an email to " + SEND_TO + ".";
+  // photos still need the share sheet — a free relay will not carry attachments
+  const pdfNote = photos.length
+    ? " <strong>Your " + photos.length + " photo" + (photos.length===1?"":"s")
+      + " cannot go this way</strong> — tap Email instead to send those."
+    : "";
+
+  if(viaEmail || !SUBMIT_KEY){
+    if(photos.length){ await sharePhotos(d, body, subj); }
+    mailtoFallback(d, body, subj);
+    done.innerHTML = SUBMIT_KEY
+      ? "Opening your email app. <strong>You still need to press send in there.</strong>"
+      : "Opening your email app — <strong>press send in there.</strong> "
+        + "(Automatic sending is not switched on yet.)";
     done.classList.add("on");
+    return;
   }
 
-  window.location.href = "mailto:" + encodeURIComponent(SEND_TO)
-    + "?cc=" + encodeURIComponent(SEND_CC)
-    + "&subject=" + encodeURIComponent(subj)
-    + "&body=" + encodeURIComponent(body);
-});
-
-$("copyBtn").addEventListener("click", async ()=>{
-  const d = collect();
-  const problem = validate(d);
-  const err = $("err");
-  if(problem){ err.textContent = problem; err.classList.add("on"); window.scrollTo({top:0,behavior:"smooth"}); return; }
-  err.classList.remove("on");
-  const text = fullBody(d);
-  $("preview").textContent = text;
-  $("preview").style.display = "";
+  const btn = $("sendBtn");
+  btn.disabled = true; btn.textContent = "Sending\u2026";
   try{
-    await navigator.clipboard.writeText(text);
-    const done = $("done");
-    done.textContent = "Copied. Paste it into an email to " + SEND_TO + " and send.";
+    await postOne(item);
+    done.innerHTML = "<strong>Sent.</strong> Nothing else to do." + pdfNote;
     done.classList.add("on");
   }catch(e){
-    const done = $("done");
-    done.textContent = "Couldn't copy automatically — select the text at the bottom of the page and copy it manually.";
+    const saved = queueAdd(item);
+    if(saved){
+      done.innerHTML = "<strong>No signal — saved on your phone.</strong> "
+        + "It will send itself as soon as you get a bar. You can close this page." + pdfNote;
+    }else{
+      done.innerHTML = "<strong>Couldn't send and couldn't save it.</strong> "
+        + "Tap <strong>Email instead</strong> so the work is not lost.";
+    }
     done.classList.add("on");
+    showQueue();
+  }finally{
+    btn.disabled = false; btn.textContent = "Send timesheet";
   }
-});
+}
 
-$("fSendTo").textContent = SEND_TO;
+async function sharePhotos(d, body, subj){
+  const photos = allShots();
+  if(!photos.length) return;
+  try{
+    const blob = buildPdf(
+      [ "West End Joiners and Builders Ltd",
+        d.name + "  —  week ending " + d.we,
+        photos.length + " photo(s): receipts, job cards and variation works" ], photos);
+    const file = new File([blob], pdfName(d), { type:"application/pdf" });
+    if(navigator.canShare && navigator.canShare({ files:[file] })){
+      await navigator.share({ files:[file], title: subj, text: body });
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const a = el("a"); a.href = url; a.download = file.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 30000);
+  }catch(e){}
+}
+
+$("sendBtn").addEventListener("click", ()=> doSend(false));
+$("copyBtn").addEventListener("click", ()=> doSend(true));
+
 recalc();
+showQueue();
+queueFlush();
 </script>
 </body>
 </html>

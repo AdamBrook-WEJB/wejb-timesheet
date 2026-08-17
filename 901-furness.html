@@ -101,6 +101,8 @@ button.ghost{background:#fff;color:var(--blue);border:1.5px solid var(--blue);bo
  font-size:13.5px;margin-bottom:12px;display:none}.err.on{display:block}
 .done{background:#ecfdf3;border:1px solid #a6f4c5;color:var(--ok);border-radius:9px;padding:12px;
  font-size:14px;margin-bottom:12px;display:none}.done.on{display:block}
+.qnote{background:#fffaf1;border:1px solid #f0d5a8;color:var(--gold);border-radius:9px;
+ padding:11px 12px;font-size:13.5px;margin-bottom:12px;line-height:1.45}
 pre.payload{background:#0f1720;color:#d7e3ee;border-radius:9px;padding:11px;font-size:11.5px;
  line-height:1.5;overflow-x:auto;white-space:pre;margin:10px 0 0;font-family:ui-monospace,Menlo,monospace}
 .foot{font-size:11.5px;color:var(--mid);text-align:center;padding:4px 8px 0;line-height:1.5}
@@ -140,6 +142,7 @@ pre.payload{background:#0f1720;color:#d7e3ee;border-radius:9px;padding:11px;font
   <main>
     <div class="err" id="err"></div>
     <div class="done" id="done"></div>
+    <div class="qnote" id="qNote" style="display:none"></div>
 
     <section class="card">
       <h2><span class="n">1</span> Your details</h2>
@@ -187,13 +190,13 @@ pre.payload{background:#0f1720;color:#d7e3ee;border-radius:9px;padding:11px;font
 
     <p class="foot">
       901 Furness / Oaklands &middot; rates rev 10.07.26 revA<br>
-      Price sheet <strong>v1.2</strong> &middot; goes to <span id="fTo"></span><br>
+      Price sheet <strong>v1.5</strong> &middot; goes to <span id="fTo"></span><br>
       These rates are for this site only. Do not pass this sheet or the password to anyone off this job.
     </p>
   </main>
 
   <div class="bar"><div class="inner">
-    <button class="ghost" id="copyBtn" type="button">Copy</button>
+    <button class="ghost" id="copyBtn" type="button">Email instead</button>
     <button class="primary" id="sendBtn" type="button">Send price work</button>
   </div></div>
 </div>
@@ -201,6 +204,12 @@ pre.payload{background:#0f1720;color:#d7e3ee;border-radius:9px;padding:11px;font
 <script>
 const BLOB = {"v": 1, "kdf": "PBKDF2-SHA256", "iter": 200000, "salt": "Ino9YXw7rh8t0nxyP5l4KQ==", "iv": "xoFsYgHQOr6WOtck", "ct": "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"};
 const SEND_TO = "adam@westendjoiners.co.uk", SEND_CC = "";
+
+/* Paste the Web3Forms access key here and Send posts straight through.
+   Leave it empty and it falls back to opening an email. */
+const SUBMIT_KEY = "db8d7de8-fd26-431d-9ea6-fe060444495e";
+const SUBMIT_URL = "https://api.web3forms.com/submit";
+const QUEUE_KEY  = "wejb.price.901.queue.v1";
 const SITE = "901", REV = "10.07.26 revA";
 let RATES = null;
 
@@ -243,6 +252,50 @@ $("unlock").addEventListener("click", async ()=>{
 });
 $("pw").addEventListener("keydown", e => { if(e.key === "Enter") $("unlock").click(); });
 $("pw").focus();
+
+/* ---- sending, with a queue for when there is no signal ---- */
+function storeOK(){ try{ localStorage.setItem("__t","1"); localStorage.removeItem("__t"); return true; }catch(e){ return false; } }
+const HAS_STORE = storeOK();
+function queueRead(){ if(!HAS_STORE) return []; try{ return JSON.parse(localStorage.getItem(QUEUE_KEY)||"[]"); }catch(e){ return []; } }
+function queueWrite(a){ if(!HAS_STORE) return false; try{ localStorage.setItem(QUEUE_KEY, JSON.stringify(a)); return true; }catch(e){ return false; } }
+function queueAdd(i){ const a=queueRead(); a.push(i); return queueWrite(a); }
+
+async function postOne(item){
+  if(!SUBMIT_KEY) throw new Error("no key");
+  const res = await fetch(SUBMIT_URL, {
+    method:"POST", headers:{ "Content-Type":"application/json", Accept:"application/json" },
+    body: JSON.stringify({ access_key:SUBMIT_KEY, subject:item.subject,
+      from_name:item.name || "WEJB price work", message:item.body,
+      name:item.name, site:SITE, week_ending:item.we, submitted_at:item.at })
+  });
+  let ok = res.ok;
+  try{ const j = await res.json(); ok = ok && j.success !== false; }catch(e){}
+  if(!ok) throw new Error("rejected");
+  return true;
+}
+
+let flushing=false;
+async function queueFlush(){
+  if(flushing || !SUBMIT_KEY) return;
+  const a=queueRead(); if(!a.length){ showQueue(); return; }
+  flushing=true; const left=[];
+  for(const it of a){ try{ await postOne(it); }catch(e){ left.push(it); } }
+  queueWrite(left); flushing=false; showQueue();
+  if(a.length && !left.length){
+    const done=$("done");
+    done.innerHTML = "The " + a.length + " sheet" + (a.length===1?"":"s")
+      + " waiting on your phone " + (a.length===1?"has":"have") + " just gone through.";
+    done.classList.add("on");
+  }
+}
+function showQueue(){
+  const n=queueRead().length, e0=$("qNote"); if(!e0) return;
+  if(n){ e0.style.display="";
+    e0.innerHTML = "<strong>" + n + " sheet" + (n===1?"":"s") + " waiting to send.</strong> "
+      + "They will go by themselves as soon as you have signal."; }
+  else e0.style.display="none";
+}
+window.addEventListener("online", queueFlush);
 
 /* ---- the sheet itself ---- */
 function defaultWeekEnding(){
@@ -454,7 +507,8 @@ function humanSummary(d){
   }
   if(d.notes){ L.push(""); L.push("NOTES"); L.push("  " + d.notes); }
   L.push("");
-  L.push("Quantities entered by the operative. Rates are the agreed schedule for this site.");
+  L.push("Quantities entered by the operative, priced at the agreed " + SITE
+         + " schedule rev " + REV + ".");
   L.push("Office to check against the plot before paying.");
   L.push("");
   return L.join("\n");
@@ -483,40 +537,63 @@ function validate(d){
 
 const fullBody = d => humanSummary(d) + "\n" + buildPayload(d) + "\n";
 
-$("sendBtn").addEventListener("click", ()=>{
-  const d = collect(), problem = validate(d);
-  const err = $("err"), done = $("done");
-  if(problem){ err.textContent = problem; err.classList.add("on"); window.scrollTo({top:0,behavior:"smooth"}); return; }
-  err.classList.remove("on");
-  const body = fullBody(d);
-  $("preview").textContent = body; $("preview").style.display = "";
-  done.innerHTML = "Your email app should have opened — <strong>you still need to press send.</strong> "
-    + "If nothing opened, tap Copy and paste it into an email to " + SEND_TO + ".";
-  done.classList.add("on");
+function mailtoFallback(body, subj){
   window.location.href = "mailto:" + encodeURIComponent(SEND_TO)
-    + "?cc=" + encodeURIComponent(SEND_CC)
-    + "&subject=" + encodeURIComponent("Price work — " + SITE + " — " + d.name + " — w/e " + d.we)
+    + (SEND_CC ? "&cc=" + encodeURIComponent(SEND_CC) : "")
+    + "?subject=" + encodeURIComponent(subj)
     + "&body=" + encodeURIComponent(body);
-});
+}
 
-$("copyBtn").addEventListener("click", async ()=>{
+async function doSend(viaEmail){
   const d = collect(), problem = validate(d);
   const err = $("err"), done = $("done");
-  if(problem){ err.textContent = problem; err.classList.add("on"); window.scrollTo({top:0,behavior:"smooth"}); return; }
-  err.classList.remove("on");
+  if(problem){ err.textContent = problem; err.classList.add("on");
+               window.scrollTo({top:0,behavior:"smooth"}); return; }
+  err.classList.remove("on"); done.classList.remove("on");
+
   const body = fullBody(d);
+  const subj = "Price work — " + SITE + " — " + d.name + " — w/e " + d.we;
   $("preview").textContent = body; $("preview").style.display = "";
-  try{ await navigator.clipboard.writeText(body);
-       done.textContent = "Copied. Paste it into an email to " + SEND_TO + " and send.";
-  }catch(e){ done.textContent = "Couldn't copy — select the text at the bottom and copy it by hand."; }
-  done.classList.add("on");
-});
+  const item = { subject: subj, body, name: d.name, we: d.we, at: new Date().toISOString() };
+
+  if(viaEmail || !SUBMIT_KEY){
+    mailtoFallback(body, subj);
+    done.innerHTML = SUBMIT_KEY
+      ? "Opening your email app. <strong>You still need to press send in there.</strong>"
+      : "Opening your email app — <strong>press send in there.</strong> "
+        + "(Automatic sending is not switched on yet.)";
+    done.classList.add("on");
+    return;
+  }
+
+  const btn = $("sendBtn");
+  btn.disabled = true; btn.textContent = "Sending\u2026";
+  try{
+    await postOne(item);
+    done.innerHTML = "<strong>Sent.</strong> The office will check it against the plot.";
+    done.classList.add("on");
+  }catch(e){
+    const saved = queueAdd(item);
+    done.innerHTML = saved
+      ? "<strong>No signal — saved on your phone.</strong> It will send itself once you have a bar."
+      : "<strong>Couldn't send and couldn't save it.</strong> Tap <strong>Email instead</strong>.";
+    done.classList.add("on");
+    showQueue();
+  }finally{
+    btn.disabled = false; btn.textContent = "Send price work";
+  }
+}
+
+$("sendBtn").addEventListener("click", ()=> doSend(false));
+$("copyBtn").addEventListener("click", ()=> doSend(true));
 
 function start(){
   document.title = "901 Furness / Oaklands price work";
   $("fTo").textContent = SEND_TO;
   $("we").value = defaultWeekEnding();
   addPlot();
+  showQueue();
+  queueFlush();
 }
 </script>
 </body>
