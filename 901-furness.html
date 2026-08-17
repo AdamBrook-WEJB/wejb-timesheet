@@ -61,9 +61,19 @@ input:focus{outline:2px solid var(--blue-lt);outline-offset:-1px;border-color:va
 .plot>.ph .pn{flex:1;min-width:0}
 .plot>.ph .sub{font-size:14px;font-weight:750;color:var(--blue);white-space:nowrap;font-variant-numeric:tabular-nums}
 .plot>.ph .rm{border:none;background:none;color:var(--danger);font-size:19px;cursor:pointer;padding:2px 4px;font-weight:600}
-.grp{padding:2px 0}
-.grp h3{margin:0;padding:9px 12px;font-size:11.5px;font-weight:700;text-transform:uppercase;
- letter-spacing:.6px;color:var(--mid);background:#f7fafc;border-bottom:1px solid var(--line)}
+.grp{padding:0}
+.grp>h3{margin:0;padding:12px 12px;font-size:12px;font-weight:700;text-transform:uppercase;
+ letter-spacing:.6px;color:var(--mid);background:#f7fafc;border-bottom:1px solid var(--line);
+ display:flex;align-items:center;gap:9px;cursor:pointer;user-select:none}
+.grp>h3 .car{font-size:12px;color:var(--blue);transition:transform .15s;flex:none;width:12px}
+.grp.open>h3 .car{transform:rotate(90deg)}
+.grp>h3 .gt{flex:1;min-width:0}
+.grp>h3 .gs{font-size:12.5px;font-weight:700;color:var(--blue);text-transform:none;
+ letter-spacing:0;font-variant-numeric:tabular-nums;white-space:nowrap}
+.grp>h3 .gs.none{color:#9aabb9;font-weight:600}
+.grp .body{display:none}
+.grp.open .body{display:block}
+.grp.has>h3{background:#eef6fc}
 .it{display:grid;grid-template-columns:1fr 68px 74px;gap:9px;align-items:center;
  padding:9px 12px;border-bottom:1px solid #eef2f6}
 .it:last-child{border-bottom:none}
@@ -94,6 +104,15 @@ button.ghost{background:#fff;color:var(--blue);border:1.5px solid var(--blue);bo
 pre.payload{background:#0f1720;color:#d7e3ee;border-radius:9px;padding:11px;font-size:11.5px;
  line-height:1.5;overflow-x:auto;white-space:pre;margin:10px 0 0;font-family:ui-monospace,Menlo,monospace}
 .foot{font-size:11.5px;color:var(--mid);text-align:center;padding:4px 8px 0;line-height:1.5}
+.empty{font-size:13.5px;color:var(--mid);text-align:center;padding:8px 0 12px}
+.vitem{border:1px solid #f0d5a8;border-radius:10px;padding:12px;margin-bottom:11px;
+ background:#fffdf8;position:relative}
+.vitem .rm{position:absolute;top:8px;right:8px;border:none;background:none;color:var(--danger);
+ font-size:18px;cursor:pointer;padding:2px 6px;font-weight:600}
+.vitem .vh{font-size:11.5px;font-weight:700;color:var(--gold);text-transform:uppercase;
+ letter-spacing:.5px;margin:0 0 10px}
+.vitem label{font-size:12px}
+.vsplit{display:grid;grid-template-columns:1fr 96px;gap:10px;align-items:end}
 .warn{background:#fffaf1;border:1px solid #f0d5a8;color:var(--gold);border-radius:9px;padding:10px 12px;
  font-size:12.5px;margin-bottom:12px;line-height:1.45}
 </style>
@@ -142,12 +161,21 @@ pre.payload{background:#0f1720;color:#d7e3ee;border-radius:9px;padding:11px;font
     </section>
 
     <section class="card">
-      <h2><span class="n">3</span> Check and send</h2>
+      <h2><span class="n">3</span> Variations</h2>
+      <p class="hint">Extra work on this site that isn't on the price list. Put down what you did and how long it took — it gets priced separately.</p>
+      <div id="vars"></div>
+      <div class="empty" id="vEmpty">Nothing added</div>
+      <button class="addrow" id="addVar" type="button">+ Add a variation</button>
+    </section>
+
+    <section class="card">
+      <h2><span class="n">4</span> Check and send</h2>
       <div class="tot">
         <table>
           <tr><td>Plots</td><td id="tPlots">0</td></tr>
           <tr><td>Items claimed</td><td id="tItems">0</td></tr>
-          <tr class="big"><td>Total</td><td id="tValue">&pound;0.00</td></tr>
+          <tr class="big"><td>Price work total</td><td id="tValue">&pound;0.00</td></tr>
+          <tr><td>Variation hours</td><td id="tVarH">0</td></tr>
         </table>
       </div>
       <div class="field">
@@ -159,7 +187,7 @@ pre.payload{background:#0f1720;color:#d7e3ee;border-radius:9px;padding:11px;font
 
     <p class="foot">
       901 Furness / Oaklands &middot; rates rev 10.07.26 revA<br>
-      Price sheet <strong>v1.0</strong> &middot; goes to <span id="fTo"></span><br>
+      Price sheet <strong>v1.1</strong> &middot; goes to <span id="fTo"></span><br>
       These rates are for this site only. Do not pass this sheet or the password to anyone off this job.
     </p>
   </main>
@@ -240,8 +268,14 @@ function addPlot(){
 
   RATES.groups.forEach(g => {
     const gd = el("div","grp");
-    const h = el("h3"); h.textContent = g.title;
+    const h = el("h3");
+    const car = el("span","car"); car.textContent = "\u25b6";
+    const gt = el("span","gt"); gt.textContent = g.title;
+    const gs = el("span","gs none"); gs.textContent = "nothing yet";
+    h.append(car, gt, gs);
+    h.addEventListener("click", ()=> gd.classList.toggle("open"));
     gd.appendChild(h);
+    const body = el("div","body");
     g.items.forEach(it => {
       const row = el("div","it"); row.dataset.code = it.c; row.dataset.rate = it.r;
       if(!(it.r > 0)) row.classList.add("zero");
@@ -255,8 +289,9 @@ function addPlot(){
       const v = el("div","v"); v.textContent = "—";
       row.append(d, q, v);
       row.addEventListener("input", recalc);
-      gd.appendChild(row);
+      body.appendChild(row);
     });
+    gd.appendChild(body);
     wrap.appendChild(gd);
   });
 
@@ -266,6 +301,47 @@ function addPlot(){
   wrap.scrollIntoView({behavior:"smooth", block:"center"});
 }
 $("addPlot").addEventListener("click", addPlot);
+
+const VARS = [];
+let varSeq = 0;
+
+function renderVars(){
+  const host = $("vars");
+  host.innerHTML = "";
+  VARS.forEach((v, n) => {
+    const it = el("div","vitem");
+    const rm = el("button","rm"); rm.type="button"; rm.innerHTML="&times;"; rm.title="Remove";
+    rm.addEventListener("click", ()=>{
+      const i = VARS.findIndex(x => x.id === v.id);
+      if(i >= 0) VARS.splice(i,1);
+      renderVars(); recalc();
+    });
+    const hd = el("div","vh"); hd.textContent = "Variation " + (n+1);
+    const f1 = el("div","field");
+    const l1 = el("label"); l1.textContent = "Description of works";
+    const ds = el("input");
+    ds.placeholder = "e.g. re-hang 4 fire doors after ceilings came down";
+    ds.value = v.desc || "";
+    ds.addEventListener("input", ()=>{ v.desc = ds.value; });
+    f1.append(l1, ds);
+    const sp = el("div","vsplit");
+    const f2 = el("div","field");
+    const l2 = el("label"); l2.textContent = "Plot or area (if it matters)";
+    const pl = el("input"); pl.placeholder = "e.g. plot 12"; pl.value = v.plot || "";
+    pl.addEventListener("input", ()=>{ v.plot = pl.value; });
+    f2.append(l2, pl);
+    const f3 = el("div","field");
+    const l3 = el("label"); l3.textContent = "Hours";
+    const hr = el("input"); hr.type="number"; hr.min="0"; hr.step="0.25"; hr.inputMode="decimal";
+    hr.placeholder="0"; hr.value = v.hours ? v.hours : "";
+    hr.addEventListener("input", ()=>{ v.hours = num(hr.value); recalc(); });
+    f3.append(l3, hr);
+    sp.append(f2, f3);
+    it.append(rm, hd, f1, sp);
+    host.appendChild(it);
+  });
+  $("vEmpty").style.display = VARS.length ? "none" : "";
+}
 
 function collect(){
   const plots = [];
@@ -279,7 +355,8 @@ function collect(){
     plots.push({ plot: p.querySelector(".pn").value.trim(), lines });
   });
   return { name: $("who").value.trim(), we: $("we").value,
-           notes: $("notes").value.trim(), plots };
+           notes: $("notes").value.trim(), plots,
+           vars: VARS.filter(v => v.desc.trim() || v.hours > 0) };
 }
 
 function itemByCode(c){
@@ -305,13 +382,33 @@ function recalc(){
         row.classList.remove("on");
       }
     });
+    p.querySelectorAll(".grp").forEach(g => {
+      let n = 0, gv = 0;
+      g.querySelectorAll(".it").forEach(row => {
+        const q = num(row.querySelector(".q").value);
+        if(q > 0){ n++; gv += Math.round(q * (parseFloat(row.dataset.rate)||0) * 100)/100; }
+      });
+      const gs = g.querySelector(".gs");
+      if(n){ gs.textContent = n + " item" + (n===1?"":"s") + "  " + money(gv);
+             gs.classList.remove("none"); g.classList.add("has"); }
+      else  { gs.textContent = "nothing yet"; gs.classList.add("none"); g.classList.remove("has"); }
+    });
     p.querySelector(".sub").textContent = money(sub);
     total += sub;
   });
   $("tPlots").textContent = document.querySelectorAll("#plots .plot").length;
   $("tItems").textContent = items;
   $("tValue").textContent = money(total);
+  const vh = VARS.reduce((a,v)=>a + (v.hours||0), 0);
+  $("tVarH").textContent = vh ? +vh.toFixed(2) : "0";
 }
+
+$("addVar").addEventListener("click", ()=>{
+  VARS.push({ id: ++varSeq, desc:"", plot:"", hours:0 });
+  renderVars(); recalc();
+  const last = $("vars").lastElementChild;
+  if(last) last.scrollIntoView({behavior:"smooth", block:"center"});
+});
 
 function buildPayload(d){
   const L = ["WEJB-PRICEWORK-V1", "NAME: " + d.name, "SITE: " + SITE,
@@ -319,6 +416,8 @@ function buildPayload(d){
   d.plots.forEach(p => p.lines.forEach(l =>
     L.push(["Q", p.plot, l.code, l.qty, l.rate.toFixed(2),
             (l.qty * l.rate).toFixed(2)].join("|"))));
+  d.vars.forEach(v => L.push(["V", (v.plot||"").replace(/\|/g,"/"), v.hours,
+                              (v.desc||"").replace(/\|/g,"/")].join("|")));
   if(d.notes) L.push("N|" + d.notes.replace(/\|/g,"/"));
   L.push("END");
   return L.join("\n");
@@ -342,7 +441,17 @@ function humanSummary(d){
     });
     L.push("");
   });
-  L.push("TOTAL CLAIMED  " + money(total));
+  L.push("PRICE WORK TOTAL  " + money(total));
+  if(d.vars.length){
+    L.push(""); L.push("VARIATIONS  (not on the price list, to be priced separately)");
+    d.vars.forEach((v,i)=>{
+      L.push("  " + (i+1) + ". " + (+v.hours || 0) + " hr"
+             + (v.plot ? "   " + v.plot : ""));
+      L.push("     " + (v.desc || "no description given"));
+    });
+    L.push("  Total variation hours: "
+           + (+d.vars.reduce((a,v)=>a+(v.hours||0),0).toFixed(2)));
+  }
   if(d.notes){ L.push(""); L.push("NOTES"); L.push("  " + d.notes); }
   L.push("");
   L.push("Quantities entered by the operative. Rates are the agreed schedule for this site.");
@@ -355,10 +464,16 @@ function validate(d){
   if(!d.name) return "Put your name at the top.";
   if(d.name.trim().split(/\s+/).length < 2) return "Full name please — first name and surname.";
   if(!d.we) return "Set the week ending date.";
-  if(!d.plots.length) return "Add a plot first.";
+  if(!d.plots.length && !d.vars.length) return "Add a plot, or a variation.";
+  for(let i=0;i<d.vars.length;i++){
+    const v = d.vars[i];
+    if(!v.desc.trim())  return "Variation " + (i+1) + " needs a description.";
+    if(!(v.hours > 0))  return "Variation " + (i+1) + " needs the hours putting in.";
+  }
   for(const p of d.plots){
     if(!p.plot) return "One of your plots has no number on it.";
-    if(!p.lines.length) return "Plot " + p.plot + " has nothing claimed against it.";
+    if(!p.lines.length && d.plots.length > 1)
+      return "Plot " + p.plot + " has nothing claimed against it.";
     for(const l of p.lines){
       if(!(l.rate > 0)) return "Plot " + p.plot + ": one of those items has no rate set. Tell the office rather than sending it.";
     }
