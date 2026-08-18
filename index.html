@@ -104,6 +104,8 @@ input[type=checkbox]{appearance:auto;-webkit-appearance:auto;width:auto;padding:
 .jrow select{padding:9px 10px;font-size:15px}
 .row{display:grid;grid-template-columns:1fr 1fr 58px 32px;gap:6px;align-items:end;margin-bottom:0}
 .row input[type=time]{padding:9px 8px;font-size:15px;text-align:center;min-width:0}
+.row select.st,.row select.fi{padding:9px 4px;font-size:15px;text-align:center;
+ text-align-last:center;min-width:0;width:100%}
 .hrsout{
   height:38px;display:flex;align-items:center;justify-content:flex-end;
   font-size:15px;font-weight:700;color:var(--blue);font-variant-numeric:tabular-nums
@@ -983,12 +985,12 @@ function makeRow(showLabels){
   const row = el("div","row" + (showLabels ? "" : " hidelbl"));
   const c1 = el("div");
   const l1 = el("span","lbl"); l1.textContent = "Start";
-  const st = el("input"); st.type = "time"; st.className = "st"; st.step = STEP_MINS*60;
+  const st = quarterSelect("st");
   c1.append(l1, st);
 
   const c2 = el("div");
   const l2 = el("span","lbl"); l2.textContent = "Finish";
-  const fi = el("input"); fi.type = "time"; fi.className = "fi"; fi.step = STEP_MINS*60;
+  const fi = quarterSelect("fi");
   c2.append(l2, fi);
 
   const c3 = el("div");
@@ -1039,6 +1041,21 @@ function stdFor(iso, job){
   const h = (job && SITE_HOURS[job]) || STANDARD;
   const fri = dowOf(iso) === 5;
   return { start: h.start, finish: fri ? (h.friFinish || h.finish) : h.finish };
+}
+
+/* a time picker that can only say quarter hours — phones show every minute on a
+   free time input no matter what step asks for, so we give them a list instead */
+function quarterSelect(cls){
+  const s = el("select", cls);
+  const none = el("option"); none.value = ""; none.textContent = "--:--";
+  s.appendChild(none);
+  for(let m = 4*60; m < 24*60; m += STEP_MINS){
+    const hh = String(Math.floor(m/60)).padStart(2,"0");
+    const mm = String(m%60).padStart(2,"0");
+    const o = el("option"); o.value = hh+":"+mm; o.textContent = hh+":"+mm;
+    s.appendChild(o);
+  }
+  return s;
 }
 
 /* snap a typed time to the nearest quarter hour */
@@ -1138,9 +1155,10 @@ function buildDays(){
       let src = null;
       for(let k = me - 1; k >= 0; k--){
         const e0 = days[k].querySelector(".entry");
-        const has = e0 && (e0.querySelector("select.job").value
+        const h0 = days[k].querySelector(".holchk");
+        const has = (h0 && h0.checked) || (e0 && (e0.querySelector("select.job").value
                         || (e0.querySelector(".fh") || {value:""}).value
-                        || e0.querySelector(".st").value);
+                        || e0.querySelector(".st").value));
         if(has){ src = days[k]; break; }
       }
       if(!src){
@@ -1176,6 +1194,21 @@ function buildDays(){
         row.querySelector(".fi").value =
           (sfi === srcStd.finish && myStd.finish !== srcStd.finish) ? myStd.finish : sfi;
       });
+
+      // holiday copies down too — a ticked day above makes this a ticked day,
+      // an unticked one clears a stray tick here. Weekends never take holiday.
+      const srcHc = src.querySelector(".holchk"), myHc = d.querySelector(".holchk");
+      const isWeekend = (day.name === "Saturday" || day.name === "Sunday");
+      if(myHc && !isWeekend && srcHc && srcHc.checked !== myHc.checked){
+        myHc.checked = srcHc.checked;
+        if(srcHc.checked){
+          const sh = src.querySelector(".holhrs"), mh = d.querySelector(".holhrs");
+          if(sh && mh && !sh.dataset.auto){        // lad set his own hours above
+            mh.value = sh.value; mh.dataset.auto = "";
+          }                                         // otherwise keep this day's default
+        }
+        myHc.dispatchEvent(new Event("change", {bubbles:true}));
+      }
       recalc();
     });
 
