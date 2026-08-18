@@ -684,8 +684,23 @@ const USUAL_WEEK = {
   "LEIGH TOMLINSON": { fixedHours:12, days:[0,1,2,3,4] },
   "DAVE HARGREAVES": { fixedHours:12, days:[0,1,2,3,4] },
   "BEN HELLOWELL":   { fixedHours:10, days:[0,1,2,3,4] },
-  "JOSEPH HELLOWELL":{ fixedHours:10, days:[0,1,2,3,4] }
+  "JOSEPH HELLOWELL":{ fixedHours:10, days:[0,1,2,3,4] },
+  "ANDY WOODHEAD":   { fixedHours:12, days:[0,1,2,3,4] }   // flat 12s + 12-hr holiday;
+                                                            // office pro-ratas his week over his jobs
 };
+
+/* Yard lads — they make things FOR the sites without travelling TO them,
+   so no travel allowance is added whatever job the hours go against. */
+const NO_TRAVEL = ["JOHN WALKER", "CHRIS HARTE", "MARTIN HELLOWELL"];
+let _noTravelSet = null;
+function noTravelNow(){
+  if(!_noTravelSet){
+    _noTravelSet = {};
+    NO_TRAVEL.forEach(k => { _noTravelSet[norm(k).join(" ")] = true; });
+  }
+  const who = document.getElementById("who");
+  return !!(who && _noTravelSet[norm(who.value).join(" ")]);
+}
 
 /* true  = fill the job AND the hours, so a standard week is one tap to check
    false = fill only the job, and he still has to put his own hours in
@@ -1349,8 +1364,9 @@ function computeDayTimed(iso, entries, hol){
   out.onsite = Math.round(worked.reduce((a,e)=>a+e.span, 0) * 100) / 100;
   if(out.onsite <= 0) return out;
 
-  // travel is one way, once a day, to the site he spent longest on
-  out.travel = TRAVEL[mainJob] || 0;
+  // travel is one way, once a day, to the site he spent longest on.
+  // Yard lads get none — their work goes to site, they don't.
+  out.travel = noTravelNow() ? 0 : (TRAVEL[mainJob] || 0);
   out.travelJob = mainJob;
 
   const dow = dowOf(iso);
