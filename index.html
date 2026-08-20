@@ -2059,7 +2059,8 @@ function buildPayload(d){
     if(c.fixed) L.push(["F", day.iso, FIXED ? FIXED.fixedHours : ""].join("|"));
     if(c.brk) L.push(["K", day.iso, c.brk].join("|"));
     day.entries.forEach(e=>{
-      if(e.job === "OTHER" && e.other && spanHours(e.st, e.fi) > 0)
+      // carry the Other description whether the day was clocked or a fixed-hours day
+      if(e.job === "OTHER" && e.other && (spanHours(e.st, e.fi) > 0 || (+e.fh || 0) > 0))
         L.push(["O", day.iso, e.other.replace(/\|/g,"/")].join("|"));
     });
     c.lines.forEach(l=>{
