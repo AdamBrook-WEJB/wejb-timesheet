@@ -137,6 +137,12 @@ pre.payload{background:#0f1720;color:#d7e3ee;border-radius:9px;padding:11px;font
 #sent .sfoot{margin-top:26px;font-size:11.5px;color:var(--mid)}
 .warn{background:#fffaf1;border:1px solid #f0d5a8;color:var(--gold);border-radius:9px;padding:10px 12px;
  font-size:12.5px;margin-bottom:12px;line-height:1.45}
+.shotbtn{display:block;text-align:center;padding:12px 9px}
+.shot{display:grid;grid-template-columns:64px 1fr 30px;gap:10px;align-items:start;
+ border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px;background:#fbfdff}
+.shot img{width:64px;height:64px;object-fit:cover;border-radius:7px;border:1px solid var(--line);display:block}
+.shot .meta input{padding:8px 9px;font-size:14px;width:100%}
+.shot .rm2{border:none;background:none;color:var(--danger);font-size:19px;cursor:pointer;padding:2px;font-weight:600;line-height:1}
 </style>
 </head>
 <body>
@@ -203,7 +209,16 @@ pre.payload{background:#0f1720;color:#d7e3ee;border-radius:9px;padding:11px;font
     </section>
 
     <section class="card">
-      <h2><span class="n">4</span> Check and send</h2>
+      <h2><span class="n">4</span> Photos of the works</h2>
+      <p class="hint">Photograph anything worth showing — measured works, job cards, delivery notes, a variation on site. They go through as one PDF with your price work.</p>
+      <div id="shots"></div>
+      <div class="empty" id="shEmpty">Nothing added</div>
+      <label class="addrow shotbtn" for="shotIn">+ Photograph the works</label>
+      <input type="file" id="shotIn" accept="image/*" capture="environment" multiple hidden>
+    </section>
+
+    <section class="card">
+      <h2><span class="n">5</span> Check and send</h2>
       <div class="tot">
         <table>
           <tr><td>Plots</td><td id="tPlots">0</td></tr>
@@ -221,7 +236,7 @@ pre.payload{background:#0f1720;color:#d7e3ee;border-radius:9px;padding:11px;font
 
     <p class="foot">
       901 Furness / Oaklands &middot; rates rev 10.07.26 revA<br>
-      Price sheet <strong>v1.6</strong> &middot; goes to <span id="fTo"></span><br>
+      Price sheet <strong>v1.7</strong> &middot; goes to <span id="fTo"></span><br>
       These rates are for this site only. Do not pass this sheet or the password to anyone off this job.
     </p>
   </main>
@@ -291,14 +306,218 @@ function queueRead(){ if(!HAS_STORE) return []; try{ return JSON.parse(localStor
 function queueWrite(a){ if(!HAS_STORE) return false; try{ localStorage.setItem(QUEUE_KEY, JSON.stringify(a)); return true; }catch(e){ return false; } }
 function queueAdd(i){ const a=queueRead(); a.push(i); return queueWrite(a); }
 
+/* ===== PHOTOS ADD-ON — shrink in-browser, ship as one PDF attachment ===== */
+const SHOTS = []; let shotSeq = 0;
+const MAX_PX = 1600, JPEG_Q = 0.72;
+
+function readImage(file){
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onerror = rej;
+    fr.onload = () => {
+      const im = new Image();
+      im.onerror = rej;
+      im.onload = () => res(im);
+      im.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
+async function shrink(file){
+  const im = await readImage(file);
+  let { width:w, height:h } = im;
+  const sc = Math.min(1, MAX_PX / Math.max(w, h));
+  w = Math.max(1, Math.round(w * sc)); h = Math.max(1, Math.round(h * sc));
+  const cv = document.createElement("canvas");
+  cv.width = w; cv.height = h;
+  const cx = cv.getContext("2d");
+  cx.fillStyle = "#fff"; cx.fillRect(0, 0, w, h);
+  cx.drawImage(im, 0, 0, w, h);
+  const blob = await new Promise(r => cv.toBlob(r, "image/jpeg", JPEG_Q));
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const thumb = cv.toDataURL("image/jpeg", 0.5);
+  return { w, h, bytes, thumb };
+}
+
+/* --- a very small PDF writer: A4 pages, one photo each, plus a cover --- */
+const A4 = { w: 595.28, h: 841.89 };
+
+function pdfEscape(t){
+  return String(t).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)")
+                  .replace(/[^\x20-\x7e]/g, "");
+}
+
+function buildPdf(coverLines, shots){
+  const enc = new TextEncoder();
+  const chunks = [];
+  let len = 0;
+  const put = x => {
+    const b = typeof x === "string" ? enc.encode(x) : x;
+    chunks.push(b); len += b.length; return b;
+  };
+  const offsets = [0];
+  const obj = (n, body, stream) => {
+    offsets[n] = len;
+    put(n + " 0 obj\n" + body + "\n");
+    if(stream){ put("stream\n"); put(stream); put("\nendstream\n"); }
+    put("endobj\n");
+  };
+
+  put("%PDF-1.4\n");
+  const nPages = 1 + shots.length;
+  const kids = [];
+  // ids: 1 catalog, 2 pages, 3 font, then per page: content, page, (image)
+  let id = 4;
+  const pageObjs = [];
+
+  // cover page content
+  let y = A4.h - 64;
+  let txt = "BT\n/F1 16 Tf\n" + (48) + " " + y.toFixed(1) + " Td\n(" + pdfEscape(coverLines[0] || "") + ") Tj\nET\n";
+  y -= 26;
+  txt += "BT\n/F1 10 Tf\n";
+  let first = true;
+  coverLines.slice(1).forEach(l => {
+    txt += (first ? (48 + " " + y.toFixed(1) + " Td\n") : "0 -14 Td\n");
+    txt += "(" + pdfEscape(l) + ") Tj\n";
+    first = false;
+  });
+  txt += "ET\n";
+  const coverContent = id++;
+  const coverPage = id++;
+  pageObjs.push({ page: coverPage, content: coverContent, txt, img: null });
+
+  shots.forEach(s => {
+    const cId = id++, pId = id++, iId = id++;
+    pageObjs.push({ page: pId, content: cId, img: iId, shot: s });
+  });
+
+  obj(1, "<< /Type /Catalog /Pages 2 0 R >>");
+  obj(2, "<< /Type /Pages /Kids [" + pageObjs.map(p => p.page + " 0 R").join(" ") +
+         "] /Count " + pageObjs.length + " >>");
+  obj(3, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
+
+  pageObjs.forEach(p => {
+    if(!p.img){
+      obj(p.content, "<< /Length " + enc.encode(p.txt).length + " >>", p.txt);
+      obj(p.page, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + A4.w.toFixed(2) + " " +
+                  A4.h.toFixed(2) + "] /Resources << /Font << /F1 3 0 R >> >> /Contents " +
+                  p.content + " 0 R >>");
+      return;
+    }
+    const s = p.shot;
+    const margin = 36, capH = 34;
+    const availW = A4.w - margin * 2, availH = A4.h - margin * 2 - capH;
+    const sc = Math.min(availW / s.w, availH / s.h);
+    const dw = s.w * sc, dh = s.h * sc;
+    const dx = (A4.w - dw) / 2, dy = margin + capH + (availH - dh) / 2;
+    const cap = s.cap || "Attachment";
+    const content =
+      "q\n" + dw.toFixed(2) + " 0 0 " + dh.toFixed(2) + " " + dx.toFixed(2) + " " +
+      dy.toFixed(2) + " cm\n/Im0 Do\nQ\n" +
+      "BT\n/F1 11 Tf\n" + margin + " " + (margin + 12) + " Td\n(" + pdfEscape(cap) + ") Tj\nET\n";
+    obj(p.content, "<< /Length " + enc.encode(content).length + " >>", content);
+    obj(p.img, "<< /Type /XObject /Subtype /Image /Width " + s.w + " /Height " + s.h +
+               " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " +
+               s.bytes.length + " >>", s.bytes);
+    obj(p.page, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + A4.w.toFixed(2) + " " +
+                A4.h.toFixed(2) + "] /Resources << /Font << /F1 3 0 R >> /XObject << /Im0 " +
+                p.img + " 0 R >> >> /Contents " + p.content + " 0 R >>");
+  });
+
+  const xrefAt = len;
+  const maxId = id - 1;
+  let xref = "xref\n0 " + (maxId + 1) + "\n0000000000 65535 f \n";
+  for(let i = 1; i <= maxId; i++){
+    xref += String(offsets[i] || 0).padStart(10, "0") + " 00000 n \n";
+  }
+  put(xref);
+  put("trailer\n<< /Size " + (maxId + 1) + " /Root 1 0 R >>\nstartxref\n" + xrefAt + "\n%%EOF\n");
+
+  const all = new Uint8Array(len);
+  let o = 0;
+  chunks.forEach(c => { all.set(c, o); o += c.length; });
+  return new Blob([all], { type: "application/pdf" });
+}
+function blobToB64(blob){
+  return new Promise((res, rej)=>{
+    const fr = new FileReader();
+    fr.onerror = rej;
+    fr.onload = ()=> res(String(fr.result).split(",")[1] || "");
+    fr.readAsDataURL(blob);
+  });
+}
+function b64ToBlob(s, type){
+  const bin = atob(s), u = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) u[i] = bin.charCodeAt(i);
+  return new Blob([u], { type });
+}
+function renderShots(){
+  const host = $("shots"); if(!host) return;
+  host.innerHTML = "";
+  SHOTS.forEach(s=>{
+    const row = el("div","shot");
+    const img = el("img"); img.src = s.thumb; img.alt = "";
+    const meta = el("div","meta");
+    const ds = el("input"); ds.placeholder = "What is it (optional)"; ds.value = s.note || "";
+    ds.addEventListener("input", ()=>{ s.note = ds.value; });
+    meta.append(ds);
+    const rm = el("button","rm2"); rm.type = "button"; rm.innerHTML = "&times;";
+    rm.addEventListener("click", ()=>{ const i = SHOTS.findIndex(x=>x.id===s.id); if(i>=0) SHOTS.splice(i,1); renderShots(); });
+    row.append(img, meta, rm); host.appendChild(row);
+  });
+  const e = $("shEmpty"); if(e) e.style.display = SHOTS.length ? "none" : "";
+}
+function allShots(){ return SHOTS.map((s,i)=>({ ...s, cap: s.note || ("Photo " + (i+1)) })); }
+async function attachPhotos(item, who, we){
+  const photos = allShots(); if(!photos.length) return;
+  const blob = buildPdf(
+    [ "West End Joiners and Builders Ltd",
+      (who || "") + "  —  week ending " + (we || ""),
+      photos.length + " photo(s) attached" ], photos);
+  item.pdfB64  = await blobToB64(blob);
+  item.pdfName = "Photos-" + (who || "wejb").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-|-$/g,"")
+               + "-we-" + (we || "") + ".pdf";
+}
+function bindShotInput(){
+  const inp = $("shotIn"); if(!inp) return;
+  const lab = document.querySelector('label[for="shotIn"]');
+  inp.addEventListener("change", async ev=>{
+    const files = [...(ev.target.files || [])]; ev.target.value = "";
+    if(!files.length) return;
+    const t = lab ? lab.textContent : "";
+    if(lab) lab.textContent = "Adding…";
+    for(const f of files){ try{ SHOTS.push({ id: ++shotSeq, note:"", ...(await shrink(f)) }); }catch(e){} }
+    if(lab) lab.textContent = t;
+    renderShots();
+  });
+}
+/* ===== END PHOTOS ADD-ON ===== */
+
 async function postOne(item){
   if(!SUBMIT_KEY) throw new Error("no key");
-  const res = await fetch(SUBMIT_URL, {
-    method:"POST", headers:{ "Content-Type":"application/json", Accept:"application/json" },
-    body: JSON.stringify({ access_key:SUBMIT_KEY, subject:item.subject,
-      from_name:item.name || "WEJB price work", message:item.body,
-      name:item.name, site:SITE, week_ending:item.we, submitted_at:item.at })
-  });
+  let res;
+  if(item.pdfB64){
+    // premium web3forms: multipart carries the photo PDF as an attachment
+    const fd = new FormData();
+    fd.append("access_key", SUBMIT_KEY);
+    fd.append("subject", item.subject);
+    fd.append("from_name", item.name || "WEJB price work");
+    fd.append("message", item.body);
+    fd.append("name", item.name || "");
+    fd.append("site", SITE);
+    fd.append("week_ending", item.we || "");
+    fd.append("submitted_at", item.at || "");
+    fd.append("attachment", b64ToBlob(item.pdfB64, "application/pdf"), item.pdfName || "photos.pdf");
+    res = await fetch(SUBMIT_URL, { method:"POST", headers:{ Accept:"application/json" }, body: fd });
+  }else{
+    res = await fetch(SUBMIT_URL, {
+      method:"POST", headers:{ "Content-Type":"application/json", Accept:"application/json" },
+      body: JSON.stringify({ access_key:SUBMIT_KEY, subject:item.subject,
+        from_name:item.name || "WEJB price work", message:item.body,
+        name:item.name, site:SITE, week_ending:item.we, submitted_at:item.at })
+    });
+  }
   let ok = res.ok;
   try{ const j = await res.json(); ok = ok && j.success !== false; }catch(e){}
   if(!ok) throw new Error("rejected");
@@ -629,6 +848,10 @@ async function doSend(viaEmail){
   $("preview").textContent = body; $("preview").style.display = "";
   const item = { subject: subj, body, name: d.name, we: d.we, at: new Date().toISOString() };
 
+  if(SHOTS.length && SUBMIT_KEY && !viaEmail){
+    try{ await attachPhotos(item, d.name, d.we); }catch(e){}
+  }
+
   if(viaEmail || !SUBMIT_KEY){
     mailtoFallback(body, subj);
     done.innerHTML = SUBMIT_KEY
@@ -667,6 +890,8 @@ function start(){
   $("fTo").textContent = SEND_TO;
   $("we").value = defaultWeekEnding();
   addPlot();
+  bindShotInput();
+  renderShots();
   showQueue();
   queueFlush();
 }
