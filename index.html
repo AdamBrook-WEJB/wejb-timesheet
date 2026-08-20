@@ -471,13 +471,6 @@ pre.payload{
     <pre class="payload" id="preview" style="display:none"></pre>
   </section>
 
-  <p style="text-align:center;margin:18px 0 4px">
-    <a href="vehicle.html" style="display:inline-block;padding:12px 22px;border:1.5px solid #0074b7;
-     border-radius:10px;color:#0074b7;font-weight:700;text-decoration:none;font-size:15px">
-     &#128663; Vehicle check &amp; plant hire sheet &rarr;</a><br>
-    <span style="font-size:12px;color:#5b6b7a">Weekly van checks and plant on site &mdash; separate quick form</span>
-  </p>
-
   <p class="foot">
     West End Joiners and Builders Ltd &middot; Farrar Mill, Rookery Lane, Halifax HX3 0PY<br>
     Timesheet form <strong>v2.9 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
@@ -2321,6 +2314,21 @@ function showSent(d, queued, photos){
       + " — week ending " + d.we, "Photos — " + d.name + " — w/e " + d.we));
     pdf.appendChild(bt);
   } else pdf.style.display = "none";
+
+  // one job done, next job offered — the van check only appears AFTER sending,
+  // so nobody mistakes it for the end of the timesheet
+  let vl = $("sVan");
+  if(!vl){
+    vl = el("div"); vl.id = "sVan";
+    vl.style.cssText = "text-align:center;margin:16px 0 4px";
+    vl.innerHTML = '<a href="vehicle.html" style="display:inline-block;padding:12px 22px;'
+      + 'border:1.5px solid #0074b7;border-radius:10px;color:#0074b7;font-weight:700;'
+      + 'text-decoration:none;font-size:15px">&#128663; Now do your vehicle check &rarr;</a>'
+      + '<br><span style="font-size:12px;color:#5b6b7a">Weekly van check &amp; plant hire '
+      + '&mdash; two minutes, if you drive one of ours</span>';
+    $("sCard").parentNode.insertBefore(vl, $("sCard").nextSibling);
+  }
+  vl.style.display = "";
 
   sent.hidden = false;
   document.querySelector("main").style.display = "none";

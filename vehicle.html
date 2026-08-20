@@ -112,7 +112,7 @@ veh.addEventListener("input", ()=>{ veh.value = veh.value.toUpperCase(); });
 
 const site = $("site");
 { const o = document.createElement("option"); o.value=""; o.textContent="— pick the site —"; site.appendChild(o); }
-Object.keys(JOBS).forEach(k=>{
+Object.keys(JOBS).sort().forEach(k=>{   // sort: JS puts "810" before "001" otherwise
   const o = document.createElement("option"); o.value=k; o.textContent=k+" — "+JOBS[k]; site.appendChild(o);
 });
 
