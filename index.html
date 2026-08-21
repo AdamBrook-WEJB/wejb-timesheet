@@ -448,8 +448,6 @@ pre.payload{
     <h2><span class="n">8</span> Check and send</h2>
     <div class="sum">
       <table>
-        <tr><td>Clocked on site</td><td id="sGross">0</td></tr>
-        <tr><td>Less unpaid breaks</td><td id="sBreak">0</td></tr>
         <tr><td>Worked hours</td><td id="sOnsite">0</td></tr>
         <tr><td>Travel allowance</td><td id="sTravel">0</td></tr>
         <tr><td>Basic hours</td><td id="sBasic">0</td></tr>
@@ -964,6 +962,10 @@ function jobSelect(compact){
 // One entry = a block of hours on one job, optionally tagged as variation work.
 // The variation hangs off the same hours the lad is paid for, so nothing is
 // counted twice — the office just learns which of those hours are recoverable.
+// jobs that open a "which job / site was it?" box — umbrella codes that cover
+// many sites, so the office needs the specifics
+const DESC_JOBS = new Set(["OTHER","021","075"]);
+
 function makeRow(showLabels){
   const entry = el("div","entry");
 
@@ -989,9 +991,10 @@ function makeRow(showLabels){
       const h = stdFor(day ? day.dataset.iso : "", js.value);
       st.value = h.start; fi.value = h.finish;
     }
-    const on = js.value === "OTHER";
+    const on = DESC_JOBS.has(js.value);
     ob.style.display = on ? "" : "none";
     entry.classList.toggle("isother", on);
+    ol.textContent = js.value === "OTHER" ? "What job was it?" : "Which job or site was it?";
     if(on) oi.focus(); else oi.value = "";
     recalc();
   });
@@ -1417,7 +1420,7 @@ function collect(){
       const job = r.querySelector("select.job").value;
       const st  = r.querySelector(".st").value;
       const fi  = r.querySelector(".fi").value;
-      const other = job === "OTHER" ? (r.querySelector(".othertxt")||{value:""}).value.trim() : "";
+      const other = DESC_JOBS.has(job) ? (r.querySelector(".othertxt")||{value:""}).value.trim() : "";
       const fh = num((r.querySelector(".fh")||{value:""}).value);
       entries.push({ job, st, fi, other, fh });
     });
@@ -1487,8 +1490,6 @@ function recalc(){
   $("sDouble").textContent = b.X2      ? +b.X2.toFixed(2)      : "0";
   $("sHol").textContent    = b.HOL     ? +b.HOL.toFixed(2)     : "0";
   $("sTravel").textContent = b.TRAVEL  ? +b.TRAVEL.toFixed(2)  : "0";
-  $("sGross").textContent  = b.GROSS   ? +b.GROSS.toFixed(2)   : "0";
-  $("sBreak").textContent  = b.BREAK   ? "-" + (+b.BREAK.toFixed(2)) : "0";
   $("sOnsite").textContent = b.ONSITE  ? +b.ONSITE.toFixed(2)  : "0";
   const paid = b.BASIC + b["X1.5"] + b.X2 + b.HOL;
   $("sTotal").textContent  = paid ? +paid.toFixed(2) : "0";
@@ -1532,12 +1533,11 @@ function recalc(){
     }
     el0.classList.add("filled");
     tot.textContent = (+c.onsite.toFixed(2)) + " hr";
-    tot.title = `${+c.gross.toFixed(2)} hr on site less ${Math.round(c.brk*60)} min break`;
+    tot.title = `${+c.onsite.toFixed(2)} hr worked`;
     const agg = {BASIC:0,"X1.5":0,X2:0};
     let trav = 0;
     c.lines.forEach(l=>{ if(l.travel) trav += l.h; else agg[l.band] += l.h; });
     const bits = [];
-    if(c.brk)       bits.push(`<span class="pill b">less ${Math.round(c.brk*60)} min break</span>`);
     if(trav)        bits.push(`<span class="pill t">Travel ${+trav.toFixed(2)} hr</span>`);
     if(agg.BASIC)   bits.push(`<span class="pill">Basic ${+agg.BASIC.toFixed(2)}</span>`);
     if(agg["X1.5"]) bits.push(`<span class="pill h">Time ½ ${+agg["X1.5"].toFixed(2)}</span>`);
@@ -2059,9 +2059,9 @@ function buildPayload(d){
     if(c.fixed) L.push(["F", day.iso, FIXED ? FIXED.fixedHours : ""].join("|"));
     if(c.brk) L.push(["K", day.iso, c.brk].join("|"));
     day.entries.forEach(e=>{
-      // carry the Other description whether the day was clocked or a fixed-hours day
-      if(e.job === "OTHER" && e.other && (spanHours(e.st, e.fi) > 0 || (+e.fh || 0) > 0))
-        L.push(["O", day.iso, e.other.replace(/\|/g,"/")].join("|"));
+      // carry the job description (Other / 021 / 075) whether clocked or a fixed-hours day
+      if(e.job && DESC_JOBS.has(e.job) && e.other && (spanHours(e.st, e.fi) > 0 || (+e.fh || 0) > 0))
+        L.push(["O", day.iso, e.job, e.other.replace(/\|/g,"/")].join("|"));
     });
     c.lines.forEach(l=>{
       if(l.travel){ L.push(["T", day.iso, l.job, "BASIC", l.h].join("|")); return; }
@@ -2095,10 +2095,10 @@ function humanSummary(d){
     if(!c.onsite){ L.push("  " + nm + "  —"); return; }
     const clock = c.fixed
       ? day.entries.filter(e=>e.fh>0).map(e=> (e.job||"no job")
-          + (e.job==="OTHER" && e.other ? " ("+e.other+")" : "")
+          + (DESC_JOBS.has(e.job) && e.other ? " ("+e.other+")" : "")
           + "  " + (+e.fh) + " hr").join(", ")
       : day.entries.filter(e=>e.job && spanHours(e.st,e.fi)>0)
-          .map(e=> e.job + (e.job==="OTHER" && e.other ? " ("+e.other+")" : "")
+          .map(e=> e.job + (DESC_JOBS.has(e.job) && e.other ? " ("+e.other+")" : "")
                    + " " + e.st + "-" + e.fi).join(", ");
     const agg = {BASIC:0,"X1.5":0,X2:0}; let trav = 0;
     c.lines.forEach(l=>{ if(l.travel) trav += l.h; else agg[l.band] += l.h; });
