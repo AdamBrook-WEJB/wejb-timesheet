@@ -299,7 +299,7 @@ pre.payload{
 #sent .scard tr.big td{font-size:17px;font-weight:750;color:var(--blue);padding-top:9px;
   border-top:1px solid var(--line)}
 #sent .snote{
-  background:#fffaf1;border:1px solid #f0d5a8;color:var(--warn);border-radius:10px;
+  background:#ecfdf3;border:1px solid #a6f4c5;color:#0a7d33;border-radius:10px;
   padding:13px 14px;font-size:13.5px;margin-bottom:16px;text-align:left;line-height:1.5
 }
 #sent .snote button{
@@ -471,7 +471,7 @@ pre.payload{
 
   <p class="foot">
     West End Joiners and Builders Ltd &middot; Farrar Mill, Rookery Lane, Halifax HX3 0PY<br>
-    Timesheet form <strong>v3.6</strong> &middot; goes to <span id="fSendTo"></span><br>
+    Timesheet form <strong>v3.7</strong> &middot; goes to <span id="fSendTo"></span><br>
     Trial version &mdash; if anything looks wrong, tell Adam or Will which day it was.
   </p>
 </main>
@@ -2179,7 +2179,7 @@ function humanSummary(d){
         + (s.job ? "job " + s.job + " — " : "") + (s.desc || "no description")));
   }
   const nph = allShots().length;
-  if(nph) L.push("", nph + " photo(s) attached as a PDF.");
+  if(nph) L.push("", nph + " photo(s) sent with this timesheet.");
   if(d.hol.any){
     L.push(""); L.push("HOLIDAY REQUEST  (raised " + todayISO() + ")");
     L.push("  " + (d.hol.from || "no start date") + "  to  " + (d.hol.to || "no end date"));
@@ -2349,16 +2349,15 @@ function showSent(d, queued, photos){
   }
 
   const pdf = $("sPdf");
-  if(photos.length){
+  if(photos.length && !queued){
     pdf.style.display = "";
-    pdf.innerHTML = "<strong>Your " + photos.length + " photo"
-      + (photos.length===1?"":"s") + " still need sending.</strong> "
-      + "They cannot go the same way as the sheet, so send them here.";
-    const bt = el("button"); bt.type = "button";
-    bt.textContent = "Send the photos";
-    bt.addEventListener("click", ()=> sharePhotos(d, "Photos for " + d.name
-      + " — week ending " + d.we, "Photos — " + d.name + " — w/e " + d.we));
-    pdf.appendChild(bt);
+    pdf.innerHTML = "<strong>&#10003; " + photos.length + " photo"
+      + (photos.length===1?"":"s") + " sent with your timesheet.</strong> "
+      + "Nothing else to do — the office has " + (photos.length===1?"it":"them") + ".";
+  } else if(photos.length && queued){
+    pdf.style.display = "";
+    pdf.innerHTML = "<strong>" + photos.length + " photo"
+      + (photos.length===1?"":"s") + " will go with your timesheet</strong> as soon as you have signal.";
   } else pdf.style.display = "none";
 
   // one job done, next job offered — the van check only appears AFTER sending,
