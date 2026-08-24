@@ -471,7 +471,7 @@ pre.payload{
 
   <p class="foot">
     West End Joiners and Builders Ltd &middot; Farrar Mill, Rookery Lane, Halifax HX3 0PY<br>
-    Timesheet form <strong>v2.9 trial</strong> &middot; goes to <span id="fSendTo"></span><br>
+    Timesheet form <strong>v3.6</strong> &middot; goes to <span id="fSendTo"></span><br>
     Trial version &mdash; if anything looks wrong, tell Adam or Will which day it was.
   </p>
 </main>
@@ -1609,7 +1609,7 @@ function queueWrite(a){
 }
 function queueAdd(item){ const a = queueRead(); a.push(item); return queueWrite(a); }
 
-/* photos travel as one PDF; base64 so the offline queue can hold them too */
+/* photos ride along as real image attachments; base64 so the offline queue can hold them */
 function blobToB64(blob){
   return new Promise((res, rej)=>{
     const fr = new FileReader();
@@ -1623,13 +1623,18 @@ function b64ToBlob(b64, type){
   for(let i=0;i<bin.length;i++) u[i] = bin.charCodeAt(i);
   return new Blob([u], { type });
 }
+function bytesToB64(bytes){
+  let s = "";
+  for(let i=0;i<bytes.length;i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s);
+}
 
 async function postOne(item){
   if(!SUBMIT_KEY) throw new Error("no key");
   let res;
-  if(item.pdfB64){
-    // premium web3forms: multipart carries the photo PDF as an attachment.
-    // Do NOT set Content-Type — the browser adds the multipart boundary.
+  if(item.photos && item.photos.length){
+    // premium web3forms: multipart carries each photo as a real image attachment.
+    // Do NOT set ANY headers — the browser adds the multipart boundary itself.
     const fd = new FormData();
     fd.append("access_key", SUBMIT_KEY);
     fd.append("subject", item.subject);
@@ -1638,9 +1643,12 @@ async function postOne(item){
     fd.append("name", item.name || "");
     fd.append("week_ending", item.we || "");
     fd.append("submitted_at", item.at || "");
-    fd.append("attachment", b64ToBlob(item.pdfB64, "application/pdf"),
-              item.pdfName || "attachments.pdf");
-    res = await fetch(SUBMIT_URL, { method:"POST", headers:{ Accept:"application/json" }, body: fd });
+    // web3forms takes multiple files as separate, differently-named fields
+    item.photos.forEach((p, i)=>{
+      const field = i === 0 ? "attachment" : "attachment_" + (i + 1);
+      fd.append(field, b64ToBlob(p.b64, "image/jpeg"), p.name || ("photo-" + (i + 1) + ".jpg"));
+    });
+    res = await fetch(SUBMIT_URL, { method:"POST", body: fd });
   }else{
     res = await fetch(SUBMIT_URL, {
       method: "POST",
@@ -2257,16 +2265,15 @@ async function doSend(viaEmail){
   const item = { subject: subj, body, name: d.name, we: d.we,
                  at: new Date().toISOString() };
 
-  // premium web3forms carries the photos as one PDF attachment on the send
+  // premium web3forms carries the actual photos as image attachments on the send
   if(photos.length && SUBMIT_KEY && !viaEmail){
     try{
-      const blob = buildPdf(
-        [ "West End Joiners and Builders Ltd",
-          d.name + "  —  week ending " + d.we,
-          photos.length + " photo(s): receipts, job cards and variation works" ], photos);
-      item.pdfB64  = await blobToB64(blob);
-      item.pdfName = pdfName(d);
-    }catch(e){ /* if the PDF can't be built, the sheet text still sends */ }
+      const who = (d.name || "lad").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-|-$/g,"");
+      item.photos = photos.map((s, i)=>({
+        name: who + "-" + d.we + "-" + (i + 1) + ".jpg",
+        b64: bytesToB64(s.bytes)
+      }));
+    }catch(e){ /* if a photo can't be encoded, the sheet text still sends */ }
   }
 
   if(viaEmail || !SUBMIT_KEY){
