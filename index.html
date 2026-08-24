@@ -125,6 +125,12 @@ input[type=checkbox]{appearance:auto;-webkit-appearance:auto;width:auto;padding:
 .fixedrow{display:none;grid-template-columns:auto 84px 1fr 32px;gap:9px;align-items:center}
 body.fixedmode .fixedrow{display:grid}
 body.fixedmode .row{display:none}
+/* "Off work unpaid" — no hours entered at all */
+.entry.isoff .row,.entry.isoff .fixedrow,
+body.fixedmode .entry.isoff .fixedrow{display:none}
+.offnote{display:none;font-size:12.5px;font-weight:600;color:var(--mid);
+  background:#f4f7fa;border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-top:2px}
+.entry.isoff .offnote{display:block}
 .fixedrow .lbl{margin:0;font-size:12px;font-weight:600;color:var(--mid)}
 .fixedrow input{padding:9px 10px;font-size:15px}
 .fixedrow .fnote{font-size:12px;color:var(--warn);font-weight:650}
@@ -471,7 +477,7 @@ pre.payload{
 
   <p class="foot">
     West End Joiners and Builders Ltd &middot; Farrar Mill, Rookery Lane, Halifax HX3 0PY<br>
-    Timesheet form <strong>v3.7</strong> &middot; goes to <span id="fSendTo"></span><br>
+    Timesheet form <strong>v3.8</strong> &middot; goes to <span id="fSendTo"></span><br>
     Trial version &mdash; if anything looks wrong, tell Adam or Will which day it was.
   </p>
 </main>
@@ -542,8 +548,12 @@ const JOBS = [
   {code:"911", short:"St Johns Close", name:"6 St Johns Close"},
   {code:"912", short:"Oastler School", name:"Oastler School Project"},
   {code:"913", short:"Bingley Gram",   name:"Bingley Grammar School"},
-  {code:"OTHER", short:"Other",        name:"Other — not on this list"}
+  {code:"OTHER", short:"Other",        name:"Other — not on this list"},
+  {code:"OFF",   short:"Off work unpaid", name:"Off work unpaid"}
 ];
+
+// jobs where no hours are entered at all — the day is simply marked
+const NO_HOURS_JOBS = new Set(["OFF"]);
 
 // Everyone who submits, taken from the WK19 wages sheet. Add and remove as
 // people start and leave. type "PAYE" = hourly block, "LO" = LABOUR ONLY block.
@@ -954,7 +964,9 @@ function jobSelect(compact){
   s.appendChild(o0);
   JOBS.forEach(j=>{
     const o = el("option"); o.value = j.code;
-    o.textContent = compact ? (j.code + " " + j.short) : (j.code + " — " + j.name);
+    // OFF is a status, not a numbered job — show it without a code
+    o.textContent = j.code === "OFF" ? j.name
+                  : compact ? (j.code + " " + j.short) : (j.code + " — " + j.name);
     s.appendChild(o);
   });
   return s;
@@ -984,9 +996,16 @@ function makeRow(showLabels){
   js.addEventListener("change", ()=>{
     const dayEl = entry.closest(".day");
     if(dayEl && dayEl.__relabel) dayEl.__relabel(js.value);
+    // "Off work unpaid" takes no hours at all — clear and hide the time boxes
+    const off = NO_HOURS_JOBS.has(js.value);
+    entry.classList.toggle("isoff", off);
+    if(off){
+      st.value = ""; fi.value = "";
+      const fhb = entry.querySelector(".fh"); if(fhb) fhb.value = "";
+    }
     // picking the job offers that site's usual hours, but only into empty boxes,
     // and never for someone on an agreed fixed day — they claim hours, not times
-    if(!FIXED && js.value && !st.value && !fi.value){
+    if(!FIXED && js.value && !off && !st.value && !fi.value){
       const day = entry.closest(".day");
       const h = stdFor(day ? day.dataset.iso : "", js.value);
       st.value = h.start; fi.value = h.finish;
@@ -1041,7 +1060,10 @@ function makeRow(showLabels){
     recalc();
   }));
 
-  entry.append(jrow, ob, row, frow);
+  const offn = el("div","offnote");
+  offn.textContent = "Marked as off work, unpaid — no hours for this day.";
+
+  entry.append(jrow, ob, row, frow, offn);
 
   entry.addEventListener("input", recalc);
   entry.addEventListener("change", recalc);
@@ -2059,6 +2081,8 @@ function buildPayload(d){
   d.days.forEach(day=>{
     const c = day.calc;
     if(c.hol > 0){ L.push(["H", day.iso, "", "HOL", c.hol].join("|")); return; }
+    // off work, unpaid — recorded so the office knows it's not a missed day
+    if(day.entries.some(e=>e.job==="OFF") && !c.onsite){ L.push(["U", day.iso].join("|")); return; }
     // raw clocking, so the office can see what was actually entered
     if(!c.fixed) day.entries.forEach(e=>{
       if(e.job && spanHours(e.st, e.fi) > 0)
@@ -2100,6 +2124,7 @@ function humanSummary(d){
     const c = day.calc;
     const nm = DAYS[i].name.slice(0,3) + " " + day.iso.slice(8,10) + "/" + day.iso.slice(5,7);
     if(c.hol > 0){ L.push("  " + nm + "  holiday " + c.hol + " hr"); return; }
+    if(day.entries.some(e=>e.job==="OFF") && !c.onsite){ L.push("  " + nm + "  off work unpaid"); return; }
     if(!c.onsite){ L.push("  " + nm + "  —"); return; }
     const clock = c.fixed
       ? day.entries.filter(e=>e.fh>0).map(e=> (e.job||"no job")
@@ -2210,8 +2235,9 @@ function validate(d){
     if(d.hol.to < d.hol.from)    return "Holiday request: the last day is before the first day.";
     if(!(d.hol.days > 0))        return "Holiday request needs the number of working days you want.";
   }
+  const anyOff = d.days.some(day => day.entries.some(e => e.job === "OFF"));
   if(!b.ONSITE && !b.HOL && !d.pw.length && !d.ex.length && !d.miles.length
-     && !VARS.length && !d.hol.any)
+     && !VARS.length && !d.hol.any && !anyOff)
     return "Nothing to send yet — add some hours, price work or expenses.";
   for(let i = 0; i < VARS.length; i++){
     const v = VARS[i];
