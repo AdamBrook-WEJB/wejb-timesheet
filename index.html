@@ -477,7 +477,7 @@ pre.payload{
 
   <p class="foot">
     West End Joiners and Builders Ltd &middot; Farrar Mill, Rookery Lane, Halifax HX3 0PY<br>
-    Timesheet form <strong>v3.8</strong> &middot; goes to <span id="fSendTo"></span><br>
+    Timesheet form <strong>v3.9</strong> &middot; goes to <span id="fSendTo"></span><br>
     Trial version &mdash; if anything looks wrong, tell Adam or Will which day it was.
   </p>
 </main>
@@ -1429,6 +1429,54 @@ function computeDayTimed(iso, entries, hol){
   return out;
 }
 
+/* Off-day rule, per Adam 02.09.26: a week with an unpaid day off earns no
+   overtime unless 39 hours are actually worked across the days that were
+   worked. Only hours past the 39th are overtime — the earliest overtime of
+   the week drops to basic first. Holiday and travel don't count toward the
+   39. Fixed-day lads are all basic anyway, so nothing changes for them.   */
+const OFFDAY_OT_THRESHOLD = 39;
+function applyOffDayRule(days){
+  const hasOff = days.some(day => day.entries.some(e => e.job === "OFF")
+                                  && !day.calc.onsite && !(day.calc.hol > 0));
+  if(!hasOff) return null;
+  const worked  = Math.round(days.reduce((a,day)=> a + (day.calc.onsite || 0), 0) * 100) / 100;
+  const allowed = Math.max(0, Math.round((worked - OFFDAY_OT_THRESHOLD) * 100) / 100);
+  const ot = [];
+  days.forEach(day => day.calc.lines.forEach(l => {
+    if(!l.travel && (l.band === "X1.5" || l.band === "X2")) ot.push({day, l});
+  }));
+  const total = Math.round(ot.reduce((a,x)=> a + x.l.h, 0) * 100) / 100;
+  let excess  = Math.round((total - allowed) * 100) / 100;
+  if(excess <= 0) return null;
+  const moved = excess;
+  for(const {day, l} of ot){                 // earliest overtime drops first
+    if(excess <= 0.0001) break;
+    const take = Math.min(l.h, excess);
+    if(take >= l.h - 0.0001){ l.band = "BASIC"; }
+    else {
+      l.h = Math.round((l.h - take) * 100) / 100;
+      const at = day.calc.lines.indexOf(l);
+      day.calc.lines.splice(at, 0, {job:l.job, band:"BASIC",
+        h: Math.round(take*100)/100, travel:false, other:l.other||""});
+    }
+    excess = Math.round((excess - take) * 100) / 100;
+  }
+  days.forEach(day => {
+    // merge any adjacent same-job basic lines the conversion created
+    const merged = [];
+    day.calc.lines.forEach(l => {
+      const p = merged[merged.length - 1];
+      if(p && p.job === l.job && p.band === l.band && !p.travel && !l.travel
+         && (p.other||"") === (l.other||"")){
+        p.h = Math.round((p.h + l.h) * 100) / 100;
+      } else merged.push(l);
+    });
+    day.calc.lines = merged.filter(l => l.h > 0.0001);
+    day.calc.paid  = Math.round(day.calc.lines.reduce((a,l)=>a+l.h,0)*100)/100;
+  });
+  return { worked, moved };
+}
+
 function collect(){
   const name = $("who").value.trim();
   const days = [];
@@ -1464,8 +1512,9 @@ function collect(){
     days: num($("hDays").value), note: $("hNote").value.trim()
   };
   hol.any = !!(hol.from || hol.to || hol.days > 0 || hol.note);
+  const offRule = applyOffDayRule(days);
   return {name, type:personType(), we:$("we").value, days, pw, ex, miles, hol,
-          notes:$("notes").value.trim()};
+          notes:$("notes").value.trim(), offRule};
 }
 
 function weekBands(d){
@@ -2155,6 +2204,10 @@ function humanSummary(d){
   if(b.X2)      L.push("  Double         " + (+b.X2.toFixed(2)) + " hr");
   if(b.HOL)     L.push("  Holiday        " + (+b.HOL.toFixed(2)) + " hr");
   L.push("  PAID TOTAL     " + (+(b.BASIC+b["X1.5"]+b.X2+b.HOL).toFixed(2)) + " hr");
+  if(d.offRule && d.offRule.moved)
+    L.push("  Off-day rule: unpaid day off this week, so overtime only starts after "
+           + OFFDAY_OT_THRESHOLD + " worked hours — "
+           + (+d.offRule.moved.toFixed(2)) + " hr paid at basic instead.");
   const byJob = {};
   d.days.forEach(day=> day.calc.lines.forEach(l=>{ if(l.job) byJob[l.job] = (byJob[l.job]||0)+l.h; }));
   L.push("");
@@ -2352,6 +2405,9 @@ function showSent(d, queued, photos){
   }
   if(d.hol.any) rows.push(["Holiday request", d.hol.days + " day"
                           + (d.hol.days===1?"":"s") + " asked for"]);
+  if(d.offRule && d.offRule.moved)
+    rows.push(["Day off unpaid", "overtime starts after " + OFFDAY_OT_THRESHOLD
+              + " worked hrs — " + (+d.offRule.moved.toFixed(2)) + " hr at basic"]);
   rows.push(["BIG", "Total paid hours", (+(b.BASIC + b["X1.5"] + b.X2 + b.HOL).toFixed(2)) + " hr"]);
 
   $("sCard").innerHTML = "<table>" + rows.map(r=>{
