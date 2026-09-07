@@ -420,8 +420,12 @@ pre.payload{
     <p class="hint">Photograph anything you'd normally staple to your sheet — receipts, delivery notes, job cards. They go through as one PDF. You can still hand the paper in as well.</p>
     <div id="shots"></div>
     <div class="empty" id="shEmpty">Nothing added</div>
-    <label class="addrow shotbtn" for="shotIn">+ Photograph a receipt or job card</label>
+    <div style="display:flex;gap:8px">
+      <label class="addrow shotbtn" for="shotIn" data-label="&#128247; Take a photo" style="flex:1">&#128247; Take a photo</label>
+      <label class="addrow shotbtn" for="shotUp" data-label="&#128444;&#65039; Upload a photo" style="flex:1">&#128444;&#65039; Upload a photo</label>
+    </div>
     <input type="file" id="shotIn" accept="image/*" capture="environment" multiple hidden>
+    <input type="file" id="shotUp" accept="image/*" multiple hidden>
   </section>
 
   <!-- 7. HOLIDAY REQUEST -->
@@ -477,7 +481,7 @@ pre.payload{
 
   <p class="foot">
     West End Joiners and Builders Ltd &middot; Farrar Mill, Rookery Lane, Halifax HX3 0PY<br>
-    Timesheet form <strong>v3.9</strong> &middot; goes to <span id="fSendTo"></span><br>
+    Timesheet form <strong>v4.1</strong> &middot; goes to <span id="fSendTo"></span><br>
     Trial version &mdash; if anything looks wrong, tell Adam or Will which day it was.
   </p>
 </main>
@@ -843,6 +847,11 @@ function setFixedMode(){
         + " hour day at basic rate</strong>, so put your hours down rather than your times. "
         + "No break is taken off and no overtime is added, and a day's holiday counts as "
         + FIXED.fixedHours + " hours including Fridays — that is what was agreed.";
+    } else if(hit && hit.t === "LO"){
+      n.style.display = "";
+      n.innerHTML = "You are <strong>labour only</strong>, so every hour goes at your "
+        + "flat rate — no time and a half, no double time and no travel time. "
+        + "Put your times in as normal and the unpaid break comes off as usual.";
     } else n.style.display = "none";
   }
 }
@@ -1373,6 +1382,10 @@ function computeDayTimed(iso, entries, hol){
     .filter(e => e.job && e.span > 0);
   if(!worked.length) return out;
 
+  // Labour-only lads, per Adam 07.09.26: everything at the flat rate.
+  // No time and a half, no double, no travel time — just the hours worked.
+  const lo = personType() === "LO";
+
   out.gross = Math.round(worked.reduce((a,e)=>a+e.span, 0) * 100) / 100;
 
   // where he actually spent longest, decided before the break comes off
@@ -1391,7 +1404,7 @@ function computeDayTimed(iso, entries, hol){
 
   // travel is one way, once a day, to the site he spent longest on.
   // Yard lads get none — their work goes to site, they don't.
-  out.travel = noTravelNow() ? 0 : (TRAVEL[mainJob] || 0);
+  out.travel = (lo || noTravelNow()) ? 0 : (TRAVEL[mainJob] || 0);
   out.travelJob = mainJob;
 
   const dow = dowOf(iso);
@@ -1405,7 +1418,8 @@ function computeDayTimed(iso, entries, hol){
     }
   };
 
-  if(dow === 6){        worked.forEach(e => e.span > 0 && push(e, OT.saturday, e.span)); }
+  if(lo){               worked.forEach(e => e.span > 0 && push(e, "BASIC", e.span)); }
+  else if(dow === 6){   worked.forEach(e => e.span > 0 && push(e, OT.saturday, e.span)); }
   else if(dow === 0){   worked.forEach(e => e.span > 0 && push(e, OT.sunday,   e.span)); }
   else {
     let used = TRAVEL_COUNTS_TOWARD_OT ? out.travel : 0;
@@ -2094,12 +2108,15 @@ function renderShots(){
   $("shEmpty").style.display = SHOTS.length ? "none" : "";
 }
 
-$("shotIn").addEventListener("change", async (ev)=>{
+/* Box 6 takes photos two ways, per Adam 07.09.26: the camera (shotIn, with
+   capture) or the phone's gallery / files (shotUp, no capture). Same handling
+   either way. */
+async function takeShots(ev){
   const files = [...(ev.target.files || [])];
+  const btn = document.querySelector('label[for="' + ev.target.id + '"]');
   ev.target.value = "";
   if(!files.length) return;
-  const btn = document.querySelector(".shotbtn");
-  btn.classList.add("busy"); btn.textContent = "Working\u2026";
+  if(btn){ btn.classList.add("busy"); btn.textContent = "Working\u2026"; }
   for(const f of files){
     try{
       const r = await shrink(f);
@@ -2110,9 +2127,11 @@ $("shotIn").addEventListener("change", async (ev)=>{
       err.classList.add("on");
     }
   }
-  btn.classList.remove("busy"); btn.textContent = "+ Photograph a receipt or job card";
+  if(btn){ btn.classList.remove("busy"); btn.textContent = btn.dataset.label || btn.textContent; }
   renderShots(); recalc();
-});
+}
+$("shotIn").addEventListener("change", takeShots);
+$("shotUp").addEventListener("change", takeShots);
 
 function pdfName(d){
   const who = (d.name || "timesheet").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -2270,6 +2289,9 @@ function humanSummary(d){
   if(d.days.some(x=>x.calc.fixed)){
     L.push("Agreed fixed day at basic rate. No break deducted, no overtime bands applied,");
     L.push("no travel added — hours are as entered.");
+  } else if(d.type === "LO"){
+    L.push("Labour only — all hours at the flat rate. No overtime bands and no travel");
+    L.push("time. The unpaid break is worked out from the times entered.");
   } else {
     L.push("Start and finish times are what the lad entered. The unpaid break, travel,");
     L.push("time and a half and double time are worked out by the form.");
