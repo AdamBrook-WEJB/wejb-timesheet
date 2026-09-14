@@ -481,7 +481,7 @@ pre.payload{
 
   <p class="foot">
     West End Joiners and Builders Ltd &middot; Farrar Mill, Rookery Lane, Halifax HX3 0PY<br>
-    Timesheet form <strong>v4.1</strong> &middot; goes to <span id="fSendTo"></span><br>
+    Timesheet form <strong>v4.2</strong> &middot; goes to <span id="fSendTo"></span><br>
     Trial version &mdash; if anything looks wrong, tell Adam or Will which day it was.
   </p>
 </main>
@@ -2409,6 +2409,7 @@ async function doSend(viaEmail){
 }
 
 function showSent(d, queued, photos){
+  draftClear();   // sent, or safely queued — either way the phone's draft has done its job
   const b = weekBands(d);
   const rows = [];
   rows.push(["Name", d.name]);
@@ -2512,6 +2513,204 @@ async function sharePhotos(d, body, subj){
 
 $("sendBtn").addEventListener("click", ()=> doSend(false));
 $("copyBtn").addEventListener("click", ()=> doSend(true));
+
+/* ---- draft memory -----------------------------------------------------------
+   Plenty of the lads fill the sheet in day by day, and a phone that forgets
+   Tuesday by Wednesday is no use to them. So the form quietly saves itself on
+   this phone as they type, keyed to the week-ending date. Come back and it
+   carries on where they left off. It wipes itself the moment the sheet is sent
+   (or safely queued to send), and a draft from a week that has already rolled
+   over dies quietly on its own — the natural weekly reset. Change the
+   week-ending date and the sheet starts fresh, exactly as it always has.
+   Photos are the one thing not kept: they are too big for this pocket, so the
+   restore note says to add them again.                                       */
+const DRAFT_KEY = "wejb.timesheet.draft.v1";
+let RESTORING = false, DRAFT_DONE = false, draftT = null;
+
+function draftDrop(){ clearTimeout(draftT); try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} }
+function draftClear(){ DRAFT_DONE = true; draftDrop(); }
+
+function draftSnapshot(){
+  const days = [];
+  document.querySelectorAll("#days .day").forEach(d=>{
+    const hc = d.querySelector(".holchk"), hh = d.querySelector(".holhrs");
+    const entries = [];
+    d.querySelectorAll(".entry").forEach(r=>{
+      entries.push({
+        job:  r.querySelector("select.job").value,
+        st:   r.querySelector(".st").value,
+        fi:   r.querySelector(".fi").value,
+        fh:   (r.querySelector(".fh")||{value:""}).value,
+        other:(r.querySelector(".othertxt")||{value:""}).value
+      });
+    });
+    days.push({ iso: d.dataset.iso,
+                hol: !!(hc && hc.checked),
+                holHrs: hh ? hh.value : "",
+                holAuto: hh ? (hh.dataset.auto || "") : "",
+                entries });
+  });
+  const ex = [];
+  document.querySelectorAll("#ex .item").forEach(i=>{
+    ex.push({ type: i.querySelector(".extype").value,
+              amt:  i.querySelector(".amt").value,
+              job:  i.querySelector("select:not(.extype)").value,
+              desc: i.querySelector(".edesc").value });
+  });
+  return {
+    we: $("we").value, who: $("who").value,
+    days, ex,
+    vars: VARS.map(v=>({ job:v.job, desc:v.desc, hours:v.hours, ref:v.ref })),
+    hol: { from:$("hFrom").value, to:$("hTo").value,
+           days:$("hDays").value, note:$("hNote").value },
+    notes: $("notes").value,
+    savedAt: new Date().toISOString()
+  };
+}
+
+function draftHasContent(s){
+  if(s.who.trim() || s.notes.trim()) return true;
+  if(s.ex.length || s.vars.length) return true;
+  if(s.hol.from || s.hol.to || s.hol.days || s.hol.note.trim()) return true;
+  return s.days.some(d => d.hol
+    || d.entries.some(e => e.job || e.st || e.fi || e.fh || e.other));
+}
+
+function draftSaveNow(){
+  if(RESTORING || DRAFT_DONE) return;
+  try{
+    const s = draftSnapshot();
+    if(draftHasContent(s)) localStorage.setItem(DRAFT_KEY, JSON.stringify(s));
+    else localStorage.removeItem(DRAFT_KEY);
+  }catch(e){ /* private browsing or full storage — the form still works, it just forgets */ }
+}
+function draftSave(){
+  if(RESTORING || DRAFT_DONE) return;
+  clearTimeout(draftT); draftT = setTimeout(draftSaveNow, 400);
+}
+
+function draftRestore(){
+  let s = null;
+  try{ s = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null"); }catch(e){}
+  if(!s || !s.we || !Array.isArray(s.days)) return;
+  // the week has rolled on — a new week deserves a clean page. The default
+  // week-ending stays at *last* Friday right up until the next Friday arrives,
+  // so a lad sending Friday's sheet late over the weekend or in the new week
+  // keeps his draft; it only dies once the following Friday's default takes over.
+  if(s.we < defaultWeekEnding()){ draftDrop(); return; }
+  RESTORING = true;
+  try{
+    // the draft carries its own week — a lad filling in daily against next
+    // Friday keeps his date even when the page's default disagrees
+    if($("we").value !== s.we){ $("we").value = s.we; buildDays(); }
+    if(s.who){ $("who").value = s.who; setFixedMode(); }
+
+    document.querySelectorAll("#days .day").forEach(d=>{
+      const sd = s.days.find(x => x.iso === d.dataset.iso);
+      if(!sd) return;
+      const rows = d.querySelector(".rows");
+      const add = rows.querySelector(".addrow");
+      while(rows.querySelectorAll(".entry").length < sd.entries.length)
+        rows.insertBefore(makeRow(false), add);
+      const ents = rows.querySelectorAll(".entry");
+      sd.entries.forEach((se, n)=>{
+        const r = ents[n]; if(!r) return;
+        const js = r.querySelector("select.job");
+        if(js.value !== (se.job || "")){
+          js.value = se.job || "";
+          js.dispatchEvent(new Event("change", {bubbles:true}));
+        }
+        // the job-change handler tidies times and hours, so the truth goes in after it
+        r.querySelector(".st").value = se.st || "";
+        r.querySelector(".fi").value = se.fi || "";
+        const fhE = r.querySelector(".fh"); if(fhE) fhE.value = se.fh || "";
+        const ot = r.querySelector(".othertxt"); if(ot && se.other) ot.value = se.other;
+      });
+      const hc = d.querySelector(".holchk");
+      if(hc && !!hc.checked !== !!sd.hol){
+        hc.checked = !!sd.hol;
+        hc.dispatchEvent(new Event("change", {bubbles:true}));
+      }
+      const hh = d.querySelector(".holhrs");
+      if(hh && sd.hol){
+        if(sd.holHrs !== "") hh.value = sd.holHrs;
+        hh.dataset.auto = sd.holAuto || "";
+      }
+      const has = sd.hol || sd.entries.some(e=>e.job||e.st||e.fi||e.fh||e.other);
+      if(has) d.classList.add("open");
+    });
+
+    (s.ex || []).forEach(se=>{
+      $("addEx").click();
+      const it = $("ex").lastElementChild; if(!it) return;
+      const t = it.querySelector(".extype");
+      t.value = se.type || "Parking";
+      t.dispatchEvent(new Event("change", {bubbles:true}));
+      const a = it.querySelector(".amt");
+      a.value = se.amt || "";
+      a.dispatchEvent(new Event("input", {bubbles:true}));
+      it.querySelector("select:not(.extype)").value = se.job || "";
+      it.querySelector(".edesc").value = se.desc || "";
+    });
+
+    (s.vars || []).forEach(v=>{
+      VARS.push({ id: ++varSeq, job: v.job || "", desc: v.desc || "",
+                  hours: +v.hours || 0, ref: v.ref || "", shots: [] });
+    });
+    if(s.vars && s.vars.length) renderVars();
+
+    if(s.hol){
+      $("hFrom").value = s.hol.from || ""; $("hTo").value = s.hol.to || "";
+      $("hDays").value = s.hol.days || ""; $("hNote").value = s.hol.note || "";
+    }
+    $("notes").value = s.notes || "";
+
+    // open the folded sections that have something restored in them
+    if(s.vars && s.vars.length) openFold("4");
+    if(s.ex && s.ex.length) openFold("5");
+    if(s.hol && (s.hol.from || s.hol.to || s.hol.days || s.hol.note)) openFold("7");
+
+    // say so, plainly, with a way out for a shared phone
+    const b = el("div");
+    b.style.cssText = "margin:10px 14px;padding:10px 12px;background:#eef6ee;"
+      + "border:1px solid #b7d6b7;border-radius:10px;font-size:13.5px;"
+      + "color:#274a27;line-height:1.5";
+    b.innerHTML = "&#128190; <strong>Carrying on where you left off</strong> &mdash; "
+      + "this phone kept what you'd put in for week ending <strong>"
+      + s.we.split("-").reverse().join("/") + "</strong>. It keeps saving as you go "
+      + "and clears itself once the sheet is sent. Photos aren't kept, so add those "
+      + "again before you send. "
+      + '<a href="#" id="draftReset" style="color:#a33;font-weight:700;'
+      + 'white-space:nowrap">Start afresh instead</a>';
+    const main = document.querySelector("main");
+    main.insertBefore(b, main.firstChild);
+    b.querySelector("#draftReset").addEventListener("click", ev=>{
+      // draftClear, not draftDrop: it also stops the leaving-the-page save
+      // from quietly writing the draft straight back before the reload
+      ev.preventDefault(); draftClear(); location.reload();
+    });
+  }catch(e){
+    draftDrop();   // a broken draft must never brick the form — bin it and carry on
+  }finally{
+    RESTORING = false;
+  }
+  recalc();
+}
+
+function openFold(n){
+  const sec = document.querySelector('section.card.fold[data-fold="' + n + '"]');
+  if(sec) sec.classList.add("open");
+}
+
+// every keystroke, tick and tap keeps the draft fresh; leaving the page saves at once
+document.addEventListener("input",  draftSave, true);
+document.addEventListener("change", draftSave, true);
+document.addEventListener("click",  draftSave, true);
+window.addEventListener("pagehide", draftSaveNow);
+document.addEventListener("visibilitychange",
+  ()=>{ if(document.visibilityState === "hidden") draftSaveNow(); });
+
+draftRestore();
 
 recalc();
 showQueue();
