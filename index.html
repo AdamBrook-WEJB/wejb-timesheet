@@ -481,7 +481,7 @@ pre.payload{
 
   <p class="foot">
     West End Joiners and Builders Ltd &middot; Farrar Mill, Rookery Lane, Halifax HX3 0PY<br>
-    Timesheet form <strong>v4.6</strong> &middot; goes to <span id="fSendTo"></span><br>
+    Timesheet form <strong>v4.7</strong> &middot; goes to <span id="fSendTo"></span><br>
     Trial version &mdash; if anything looks wrong, tell Adam or Will which day it was.
   </p>
 </main>
@@ -529,6 +529,7 @@ const JOBS = [
   {code:"042", short:"Contact Fabs",   name:"Contact Fabs Small Works"},
   {code:"075", short:"Calderdale MBC", name:"Calderdale MBC Small Works"},
   {code:"088", short:"Millenium",      name:"Millenium"},
+  {code:"338", short:"College",        name:"Calderdale College"},
   {code:"810", short:"Point Cross",    name:"Point Cross"},
   {code:"825", short:"Connect SW",     name:"Connect Housing — Small Works"},
   {code:"835", short:"Airedale Hosp",  name:"Airedale Hospital"},
@@ -558,6 +559,8 @@ const JOBS = [
   {code:"914", short:"Brentwood",      name:"Brentwood, Birchcliffe Road"},
   {code:"915", short:"Soltyre",        name:"Soltyre, Carr Crofts Drive, Leeds"},
   {code:"916", short:"RPS Boxings",    name:"RPS Group Boxings, Rochdale"},
+  {code:"917", short:"Towngate",       name:"Towngate"},
+  {code:"918", short:"Hanson Lane",    name:"Hanson Lane"},
   {code:"OTHER", short:"Other",        name:"Other — not on this list"},
   {code:"OFF",   short:"Off work unpaid", name:"Off work unpaid"}
 ];
@@ -702,11 +705,11 @@ const SITE_HOURS = {
 */
 const USUAL_WEEK = {
   // Agreed fixed day, every hour at basic — the overtime rules do not apply to these.
-  "LEIGH TOMLINSON": { fixedHours:12, days:[0,1,2,3,4] },
-  "DAVE HARGREAVES": { fixedHours:12, days:[0,1,2,3,4] },
+  "LEIGH TOMLINSON": { fixedHours:10, days:[0,1,2,3,4] },
+  "DAVE HARGREAVES": { fixedHours:10, days:[0,1,2,3,4] },
   "BEN HELLOWELL":   { fixedHours:10, days:[0,1,2,3,4] },
   "JOSEPH HELLOWELL":{ fixedHours:10, days:[0,1,2,3,4] },
-  "ANDY WOODHEAD":   { fixedHours:12, days:[0,1,2,3,4] }   // flat 12s + 12-hr holiday;
+  "ANDY WOODHEAD":   { fixedHours:10, days:[0,1,2,3,4] }   // flat 10s + 10-hr holiday;
                                                             // office pro-ratas his week over his jobs
 };
 
@@ -749,7 +752,7 @@ const DAYS = [
   {name:"Sunday",    off:-5}
 ];
 
-// set when the typed name is on an agreed fixed day (12 or 10 hours, all basic)
+// set when the typed name is on an agreed fixed day (10 hours, all basic)
 let FIXED = null;
 
 // receipts and job cards photographed on the phone
